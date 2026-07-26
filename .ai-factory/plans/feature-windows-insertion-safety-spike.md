@@ -170,7 +170,7 @@ Spike является disposable experiment. Его production code не пер
 
 ### Фаза 3. Acceptance И Решение
 
-- [ ] **Задача 8. Выполнить automated и manual acceptance matrix**
+- [x] **Задача 8. Выполнить automated и manual acceptance matrix**
   - Deliverable: выполнить `python -m unittest discover -s tests` из `experiments/windows_insertion`; заполнить versioned matrix в `experiments/windows_insertion/README.md` для Notepad, Chromium/Firefox, classic password test app, browser password field, elevated test app и clipboard formats.
   - Поведение: отдельно проверить unchanged target, other window, another control in same window, target destroyed, protected field, elevated target, rich/unknown clipboard fallback, external clipboard race, injection failure, restoration failure и repeated request. Word, 1С, email client и editor пометить `not run`, если недоступны, без имитации результата.
   - Зависимости: задачи 1-7.
@@ -178,7 +178,7 @@ Spike является disposable experiment. Его production code не пер
   - Logging: сохранять только safe technical run log с case ID, environment version, outcome code и duration; WARN для skipped app; ERROR для failed invariant без payload.
   - Files: `experiments/windows_insertion/README.md`; test sources из задач 1-7.
 
-- [ ] **Задача 9. Зафиксировать архитектурное решение spike**
+- [x] **Задача 9. Зафиксировать архитектурное решение spike**
   - Deliverable: через mandatory documentation checkpoint создать `docs/research/windows_insertion_spike_results.md` с environment, matrix, найденными ограничениями, предлагаемыми production ports и единственным решением `GO`, `REWORK` или `NO-GO`.
   - Поведение: отделить проверенные факты от предположений; не объявлять generic paste подтверждённым, если API даёт только dispatch; перечислить residual TOCTOU risk и deferred Word/1С/Windows 10 checks; формулировать `GO` только как разрешение продолжить design на проверенной Windows 11 matrix, не как MVP acceptance; предложить изменения `.ai-factory/ARCHITECTURE.md` только если experiment доказал необходимость.
   - Зависимости: задача 8.

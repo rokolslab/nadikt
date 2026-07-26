@@ -129,6 +129,19 @@ class WindowsClipboardAdapterTests(unittest.TestCase):
         self.assertTrue(result.external_change)
         self.assertEqual({CF_UNICODETEXT: b"external"}, api.items)
 
+    def test_external_change_before_mutation_is_rejected_without_overwrite(self) -> None:
+        api = FakeClipboardApi({CF_UNICODETEXT: b"original"})
+        adapter = WindowsClipboardAdapter(api)
+        adapter.prepare()
+        api.items = {CF_UNICODETEXT: b"external"}
+        api.sequence += 1
+
+        with self.assertRaisesRegex(ClipboardAccessError, "clipboard_mutation_failed"):
+            adapter.commit_mutation("synthetic")
+
+        self.assertEqual({CF_UNICODETEXT: b"external"}, api.items)
+        self.assertEqual([], api.replaced_payloads)
+
     def test_restoration_failure_keeps_original_snapshot_alive(self) -> None:
         original = bytearray(CANARY_BYTES)
         api = FakeClipboardApi({CF_DIB: original})  # type: ignore[dict-item]

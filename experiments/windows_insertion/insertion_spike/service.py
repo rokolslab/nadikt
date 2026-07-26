@@ -62,9 +62,9 @@ class InsertionService:
         started = monotonic()
         self._logger.debug("insertion phase=retain_result")
         with self._state_lock:
-            self._retained_results[request.request_id] = request.text
             if request.request_id in self._attempted_request_ids:
                 return self._finish(request.request_id, OutcomeCode.ALREADY_DELIVERED, started)
+            self._retained_results[request.request_id] = request.text
             self._attempted_request_ids.add(request.request_id)
 
         if not self._delivery_lock.acquire(blocking=False):
@@ -135,11 +135,11 @@ class InsertionService:
             self._clipboard.commit_mutation(request.text)
         except Exception as error:
             self._log_boundary_error("clipboard", "commit_mutation", error)
-            return self._finish(
+            return self._restore_after_dispatch(
                 request.request_id,
+                snapshot,
                 OutcomeCode.CLIPBOARD_FAILED,
                 started,
-                original_snapshot_retained=True,
             )
 
         self._logger.debug("insertion phase=dispatch method=paste")

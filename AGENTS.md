@@ -4,7 +4,7 @@
 
 ## Обзор проекта
 
-Nadikt - автономная утилита голосового ввода для Windows 10/11 с локальным ASR, безопасной вставкой текста и будущим переносом общего ядра на Ubuntu. Сейчас репозиторий находится на стадии спецификации и настройки контекста: исходный код приложения ещё не создан.
+Nadikt - автономная утилита голосового ввода для Windows 10/11 с локальным ASR, безопасной вставкой текста и будущим переносом общего ядра на Ubuntu. Исходный код приложения ещё не создан; в репозитории есть только изолированный disposable experiment безопасной Windows-вставки.
 
 Подробное описание проекта находится в `.ai-factory/DESCRIPTION.md`, канонические продуктовые требования - в `docs/`.
 
@@ -39,6 +39,8 @@ nadikt/
 |   |-- architecture/                   # согласованная стратегия разработки
 |   |-- requirements/                   # техническое задание и ASR-требования
 |   `-- research/                       # анализ аналогов
+|-- experiments/
+|   `-- windows_insertion/              # disposable spike target/clipboard/input safety
 |-- .ai-factory.json                    # метаданные установки AI Factory
 |-- AGENTS.md                           # карта проекта для агентов
 |-- opencode.json                       # проектная конфигурация OpenCode и MCP
@@ -55,6 +57,9 @@ nadikt/
 | `docs/architecture/ADR-001-codebase-strategy.md` | Решение HYBRID по собственной кодовой базе и выборочному использованию сторонних решений. |
 | `docs/research/repository_assessment.md` | Технический и лицензионный анализ открытых приложений голосового ввода. |
 | `docs/research/handy_poc_plan.md` | Ограниченный план проверки Handy на Ubuntu и Windows. |
+| `docs/research/windows_insertion_spike_results.md` | Результаты Windows insertion spike и решение REWORK. |
+| `experiments/windows_insertion/README.md` | Команды, safety rules и versioned acceptance matrix disposable spike. |
+| `experiments/windows_insertion/insertion_spike/cli.py` | Ручной двухэтапный capture/deliver harness; не является точкой входа приложения. |
 | `.ai-factory/DESCRIPTION.md` | Краткий контекст продукта, выбранный стек и открытые технические решения. |
 | `.ai-factory/ARCHITECTURE.md` | Целевая Explicit Architecture, структура слоёв и правила зависимостей. |
 | `.ai-factory/ROADMAP.md` | Стратегическая последовательность от квалификации рисков до Windows MVP и Ubuntu-версии. |
@@ -63,7 +68,7 @@ nadikt/
 | `.opencode/skills/nadikt-offline-asr/SKILL.md` | Правила автономной интеграции GigaAM/faster-whisper и benchmark. |
 | `opencode.json` | GitHub MCP для OpenCode; ожидает `GITHUB_TOKEN` в окружении. |
 
-Точка входа приложения отсутствует, потому что реализация ещё не начата.
+Точка входа приложения отсутствует. `experiments/windows_insertion/insertion_spike/cli.py` запускает только disposable experiment и не переносится автоматически в production.
 
 ## Документация
 
@@ -76,6 +81,7 @@ nadikt/
 | Оценка репозиториев | `docs/research/repository_assessment.md` | Сравнение лицензий, архитектуры, платформ, оценок и fork gate. |
 | ADR стратегии кодовой базы | `docs/architecture/ADR-001-codebase-strategy.md` | Принятое решение HYBRID и условия пересмотра. |
 | Handy PoC | `docs/research/handy_poc_plan.md` | Измеримый план проверки оставшихся рисков Handy. |
+| Windows insertion spike | `docs/research/windows_insertion_spike_results.md` | Проверенные факты, ограничения, production ports и решение REWORK. |
 | Roadmap | `.ai-factory/ROADMAP.md` | Milestones исследования, прототипов, Windows MVP и Ubuntu-версии. |
 
 README пока отсутствует.

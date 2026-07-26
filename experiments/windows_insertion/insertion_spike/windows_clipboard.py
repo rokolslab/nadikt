@@ -100,10 +100,21 @@ class WindowsClipboardAdapter:
             raise ClipboardAccessError("clipboard_not_prepared")
         self._logger.debug("clipboard phase=commit_mutation")
         encoded = text.encode("utf-16-le") + b"\x00\x00"
+        self._prepared_state.mutation_sequence = (
+            self._prepared_state.sequence_before_mutation
+        )
         try:
             with self._api.opened():
-                self._api.replace_contents({CF_UNICODETEXT: encoded})
-                self._prepared_state.mutation_sequence = self._api.sequence_number()
+                if (
+                    self._api.sequence_number()
+                    != self._prepared_state.sequence_before_mutation
+                ):
+                    raise ClipboardAccessError("clipboard_changed_before_mutation")
+                try:
+                    self._api.replace_contents({CF_UNICODETEXT: encoded})
+                finally:
+                    # The clipboard is still locked, so this ownership marker cannot race.
+                    self._prepared_state.mutation_sequence = self._api.sequence_number()
         except Exception as error:
             self._log_error("commit_mutation", error)
             raise ClipboardAccessError("clipboard_mutation_failed") from None
@@ -225,5 +236,9 @@ class CtypesClipboardApi:
         self._kernel32.GlobalAlloc.argtypes = (wintypes.UINT, ctypes.c_size_t)
         self._kernel32.GlobalLock.restype = wintypes.LPVOID
         self._kernel32.GlobalLock.argtypes = (wintypes.HGLOBAL,)
+        self._kernel32.GlobalUnlock.argtypes = (wintypes.HGLOBAL,)
+        self._kernel32.GlobalFree.argtypes = (wintypes.HGLOBAL,)
         self._kernel32.GlobalSize.restype = ctypes.c_size_t
         self._kernel32.GlobalSize.argtypes = (wintypes.HGLOBAL,)
+        self._user32.EmptyClipboard.restype = wintypes.BOOL
+        self._user32.EnumClipboardFormats.argtypes = (wintypes.UINT,)

@@ -32,6 +32,7 @@ class WindowsIdentity:
     thread_id: int
     focused_control: int
     automation_id: tuple[int, ...] | None = None
+    process_marker: int = 0
 
     def __repr__(self) -> str:
         return "WindowsIdentity(<opaque>)"
@@ -117,11 +118,13 @@ class WindowsTargetAdapter:
             captured.process_id,
             captured.thread_id,
             captured.focused_control,
+            captured.process_marker,
         ) != (
             current.top_window,
             current.process_id,
             current.thread_id,
             current.focused_control,
+            current.process_marker,
         ):
             return False
         if captured.automation_id is not None:
@@ -155,11 +158,15 @@ class CtypesWindowsTargetApi:
             return None
         focused = info.hwndFocus or foreground
         top_window = self._user32.GetAncestor(foreground, GA_ROOT) or foreground
+        process_marker = self._process_creation_marker(process_id.value)
+        if process_marker is None:
+            return None
         return WindowsIdentity(
             int(top_window),
             int(process_id.value),
             int(thread_id),
             int(focused),
+            process_marker=process_marker,
         )
 
     def is_window(self, identity: WindowsIdentity) -> bool:
@@ -228,9 +235,43 @@ class CtypesWindowsTargetApi:
                 self._kernel32.CloseHandle(token)
             self._kernel32.CloseHandle(process)
 
+    def _process_creation_marker(self, process_id: int) -> int | None:
+        process = self._kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, process_id
+        )
+        if not process:
+            return None
+        creation = wintypes.FILETIME()
+        exit_time = wintypes.FILETIME()
+        kernel_time = wintypes.FILETIME()
+        user_time = wintypes.FILETIME()
+        try:
+            if not self._kernel32.GetProcessTimes(
+                process,
+                ctypes.byref(creation),
+                ctypes.byref(exit_time),
+                ctypes.byref(kernel_time),
+                ctypes.byref(user_time),
+            ):
+                return None
+            return (int(creation.dwHighDateTime) << 32) | int(creation.dwLowDateTime)
+        finally:
+            self._kernel32.CloseHandle(process)
+
     def _configure_prototypes(self) -> None:
         self._user32.GetForegroundWindow.restype = wintypes.HWND
         self._user32.GetAncestor.restype = wintypes.HWND
+        self._user32.GetWindowThreadProcessId.argtypes = (
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.DWORD),
+        )
+        self._user32.GetClassNameW.argtypes = (
+            wintypes.HWND,
+            wintypes.LPWSTR,
+            ctypes.c_int,
+        )
+        self._user32.GetWindowLongW.argtypes = (wintypes.HWND, ctypes.c_int)
+        self._user32.IsWindow.argtypes = (wintypes.HWND,)
         self._user32.GetGUIThreadInfo.argtypes = (
             wintypes.DWORD,
             ctypes.POINTER(GUITHREADINFO),
@@ -240,6 +281,26 @@ class CtypesWindowsTargetApi:
             wintypes.DWORD,
             wintypes.BOOL,
             wintypes.DWORD,
+        )
+        self._kernel32.GetProcessTimes.argtypes = (
+            wintypes.HANDLE,
+            ctypes.POINTER(wintypes.FILETIME),
+            ctypes.POINTER(wintypes.FILETIME),
+            ctypes.POINTER(wintypes.FILETIME),
+            ctypes.POINTER(wintypes.FILETIME),
+        )
+        self._kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        self._advapi32.OpenProcessToken.argtypes = (
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.HANDLE),
+        )
+        self._advapi32.GetTokenInformation.argtypes = (
+            wintypes.HANDLE,
+            ctypes.c_int,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
         )
         self._advapi32.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
         self._advapi32.GetSidSubAuthorityCount.argtypes = (wintypes.LPVOID,)

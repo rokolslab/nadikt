@@ -14,8 +14,9 @@ def identity(
     thread: int = 30,
     control: int = 40,
     automation: tuple[int, ...] | None = (1, 2),
+    process_marker: int = 50,
 ) -> WindowsIdentity:
-    return WindowsIdentity(window, process, thread, control, automation)
+    return WindowsIdentity(window, process, thread, control, automation, process_marker)
 
 
 class FakeTargetApi:
@@ -63,6 +64,11 @@ class WindowsTargetAdapterTests(unittest.TestCase):
 
     def test_changed_automation_identity_is_changed(self) -> None:
         self.api.current = identity(automation=(1, 3))
+
+        self.assertEqual(OutcomeCode.TARGET_CHANGED, self.adapter.assess(self.token).code)
+
+    def test_reused_process_id_with_new_process_marker_is_changed(self) -> None:
+        self.api.current = identity(process_marker=51)
 
         self.assertEqual(OutcomeCode.TARGET_CHANGED, self.adapter.assess(self.token).code)
 

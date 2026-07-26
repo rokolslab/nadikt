@@ -162,6 +162,14 @@ class InsertionServiceTests(unittest.TestCase):
         self.assertTrue(outcome.original_snapshot_retained)
         self.assertIsNotNone(self.service.retained_snapshot("r1"))
 
+    def test_partial_mutation_failure_attempts_immediate_restoration(self) -> None:
+        self.clipboard.commit_error = RuntimeError(CANARY)
+
+        outcome = self.service.deliver(self.request(), self.token)
+
+        self.assertEqual(OutcomeCode.CLIPBOARD_FAILED, outcome.code)
+        self.assertEqual(1, self.clipboard.restore_calls)
+
     def test_cancellation_happens_before_mutation(self) -> None:
         outcome = self.service.deliver(self.request(), self.token, cancelled=True)
 
@@ -170,11 +178,14 @@ class InsertionServiceTests(unittest.TestCase):
 
     def test_repeated_request_is_rejected_without_second_dispatch(self) -> None:
         first = self.service.deliver(self.request(), self.token)
-        second = self.service.deliver(self.request(), self.token)
+        second = self.service.deliver(
+            InsertionRequest("r1", "DIFFERENT_RETRY_PAYLOAD"), self.token
+        )
 
         self.assertEqual(OutcomeCode.DISPATCHED, first.code)
         self.assertEqual(OutcomeCode.ALREADY_DELIVERED, second.code)
         self.assertEqual(1, self.clipboard.restore_calls)
+        self.assertEqual(CANARY, self.service.retained_result("r1"))
 
     def test_concurrent_request_is_rejected_as_busy(self) -> None:
         entered = threading.Event()
