@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from threading import Lock
-from time import monotonic
+from time import monotonic, sleep
 
 from .contracts import (
     ClipboardAdapter,
@@ -29,11 +29,13 @@ class InsertionService:
         target: TargetAdapter,
         clipboard: ClipboardAdapter,
         injector: InputInjector,
+        paste_restore_delay_ms: int = 0,
         logger: logging.Logger | None = None,
     ) -> None:
         self._target = target
         self._clipboard = clipboard
         self._injector = injector
+        self._paste_restore_delay_seconds = max(0, paste_restore_delay_ms) / 1000
         self._logger = logger or get_logger()
         self._delivery_lock = Lock()
         self._state_lock = Lock()
@@ -154,6 +156,12 @@ class InsertionService:
         dispatch_code: OutcomeCode,
         started: float,
     ) -> InsertionOutcome:
+        if dispatch_code is OutcomeCode.DISPATCHED and self._paste_restore_delay_seconds:
+            self._logger.debug(
+                "insertion phase=paste_consumption_wait duration_ms=%d",
+                int(self._paste_restore_delay_seconds * 1000),
+            )
+            sleep(self._paste_restore_delay_seconds)
         self._logger.debug("insertion phase=clipboard_restore")
         try:
             restore = self._clipboard.restore(snapshot)

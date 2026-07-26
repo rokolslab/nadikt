@@ -138,6 +138,7 @@ class CtypesWindowsTargetApi:
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self._advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        self._configure_prototypes()
 
     def capture_identity(self) -> WindowsIdentity | None:
         foreground = self._user32.GetForegroundWindow()
@@ -226,6 +227,24 @@ class CtypesWindowsTargetApi:
             if token:
                 self._kernel32.CloseHandle(token)
             self._kernel32.CloseHandle(process)
+
+    def _configure_prototypes(self) -> None:
+        self._user32.GetForegroundWindow.restype = wintypes.HWND
+        self._user32.GetAncestor.restype = wintypes.HWND
+        self._user32.GetGUIThreadInfo.argtypes = (
+            wintypes.DWORD,
+            ctypes.POINTER(GUITHREADINFO),
+        )
+        self._kernel32.OpenProcess.restype = wintypes.HANDLE
+        self._kernel32.OpenProcess.argtypes = (
+            wintypes.DWORD,
+            wintypes.BOOL,
+            wintypes.DWORD,
+        )
+        self._advapi32.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
+        self._advapi32.GetSidSubAuthorityCount.argtypes = (wintypes.LPVOID,)
+        self._advapi32.GetSidSubAuthority.restype = ctypes.POINTER(wintypes.DWORD)
+        self._advapi32.GetSidSubAuthority.argtypes = (wintypes.LPVOID, wintypes.DWORD)
 
 
 class GUITHREADINFO(ctypes.Structure):

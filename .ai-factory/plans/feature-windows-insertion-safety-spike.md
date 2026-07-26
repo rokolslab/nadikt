@@ -136,7 +136,7 @@ Spike является disposable experiment. Его production code не пер
 
 ### Фаза 2. Clipboard И Injection
 
-- [ ] **Задача 4. Реализовать безопасную clipboard transaction**
+- [x] **Задача 4. Реализовать безопасную clipboard transaction**
   - Deliverable: добавить `experiments/windows_insertion/insertion_spike/windows_clipboard.py` с явным `prepare`, `commit_mutation`, `restore` и deterministic cleanup.
   - Поведение: enum formats и зафиксировать `GetClipboardSequenceNumber` до mutation; клонировать подтверждённо поддержанные Unicode text, DIB/image и file-list handles; при HTML/RTF/unknown/delayed-rendered/non-cloneable format вернуть `clipboard_unsafe` для выбора direct path без mutation. Перед restoration проверить sequence/ownership: более новый внешний clipboard никогда не перезаписывается.
   - Зависимости: задача 1; adapter реализуется независимо от service, target и injector.
@@ -144,7 +144,7 @@ Spike является disposable experiment. Его production code не пер
   - Logging: DEBUG для format count, known/unknown flags и transaction phase; WARN для unsupported/locked; ERROR для Win32 failure code без clipboard payload, filenames или byte dumps.
   - Files: `experiments/windows_insertion/insertion_spike/windows_clipboard.py`, `experiments/windows_insertion/tests/test_windows_clipboard.py`.
 
-- [ ] **Задача 5. Реализовать контролируемый paste и Unicode fallback**
+- [x] **Задача 5. Реализовать контролируемый paste и Unicode fallback**
   - Deliverable: добавить `experiments/windows_insertion/insertion_spike/windows_injector.py` с отдельными paste dispatch и Unicode `SendInput` paths.
   - Поведение: injector не импортирует target или clipboard adapters и выполняет только выданный service dispatch permit. Физически удерживаемые modifiers обнаруживаются и приводят к wait/rejection; injector освобождает только synthetic keys, которые нажал сам. `Ctrl+V` outcome считать `dispatched`; Unicode fallback разрешён orchestration только для safe non-protected target; surrogate pairs и newlines обрабатывать явно.
   - Зависимости: задачи 1 и 3; clipboard path не является обязательной зависимостью direct injection.
@@ -152,7 +152,7 @@ Spike является disposable experiment. Его production code не пер
   - Logging: DEBUG для выбранного method, event count и dispatch phase без key/text values; INFO для safe outcome; ERROR для returned event-count mismatch и Win32 code без payload.
   - Files: `experiments/windows_insertion/insertion_spike/windows_injector.py`, `experiments/windows_insertion/tests/test_windows_injector.py`.
 
-- [ ] **Задача 6. Создать controlled Windows fixtures**
+- [x] **Задача 6. Создать controlled Windows fixtures**
   - Deliverable: добавить `experiments/windows_insertion/fixtures/classic_target.py`, `experiments/windows_insertion/fixtures/password_form.html` и `experiments/windows_insertion/fixtures/clipboard_racer.py` без бинарных artifacts и сетевых зависимостей.
   - Поведение: classic target предоставляет обычный Win32 EDIT и `ES_PASSWORD` control, локальная HTML-страница - normal/password fields и два controls одного окна, clipboard racer - детерминированное внешнее изменение sequence. Elevated case запускается пользователем вручную через UAC; spike не инициирует elevation автоматически.
   - Зависимости: задача 1; fixtures могут разрабатываться параллельно adapters.
@@ -160,7 +160,7 @@ Spike является disposable experiment. Его production code не пер
   - Logging: fixture stdout сообщает только readiness/case ID; не печатает typed text, clipboard payload, HWND, PID, titles или control content.
   - Files: `experiments/windows_insertion/fixtures/classic_target.py`, `experiments/windows_insertion/fixtures/password_form.html`, `experiments/windows_insertion/fixtures/clipboard_racer.py`, `experiments/windows_insertion/README.md`.
 
-- [ ] **Задача 7. Добавить минимальный двухэтапный manual CLI harness**
+- [x] **Задача 7. Добавить минимальный двухэтапный manual CLI harness**
   - Deliverable: добавить `experiments/windows_insertion/insertion_spike/cli.py` и команды README для раздельных `capture` и `deliver` phases с фиксированным synthetic Unicode payload.
   - Поведение: CLI после capture не активирует своё окно; countdown позволяет оставить или изменить focus, затем delivery использует только ранее captured token. Поддержать paste/direct/auto, explicit confirmation, cancel и interactive retention result/original snapshot до выхода процесса; не добавлять OS-level single-instance lifecycle или production exit taxonomy.
   - Зависимости: задачи 2-6.
