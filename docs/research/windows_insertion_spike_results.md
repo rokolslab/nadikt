@@ -112,3 +112,9 @@ Windows adapters. Изменение `.ai-factory/ARCHITECTURE.md` по резу
 Residual TOCTOU между финальной revalidation и обработкой input целевым
 приложением остаётся даже после REWORK и должен быть явно принят либо
 дополнительно ограничен в production design.
+
+## См. Также
+
+- [Стратегия разработки](../architecture/Nadikt_development_strategy.md) - место Windows validation в общей последовательности.
+- [ADR-001: стратегия кодовой базы](../architecture/ADR-001-codebase-strategy.md) - почему experiment не переносится как production subsystem.
+- [Оценка репозиториев](repository_assessment.md) - исходные failure modes и решение `HYBRID`.

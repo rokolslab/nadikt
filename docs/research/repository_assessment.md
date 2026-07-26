@@ -538,19 +538,27 @@ Checkout выполнен 26 июля 2026 г. только во временн�
 
 Дополнительные репозитории не добавлялись. Обязательная выборка уже покрывает основные архитектуры (Tauri, Rust daemon, Python utility, native Win32, Electron и Linux CLI). Добавление ещё трёх проектов не устранило бы главные неизвестные - benchmark GigaAM/faster-whisper на целевом i3 и acceptance tests безопасной Windows-вставки.
 
+Windows insertion spike от 2026-07-26 получил решение [`REWORK`](windows_insertion_spike_results.md): classic Win32 target/protected/direct-input contracts подтверждены, но UI Automation и real application/clipboard matrix остаются открытыми. Результат не меняет решение `HYBRID` и подтверждает, что решения исследованных приложений нельзя переносить как готовую подсистему.
+
 ### Условия пересмотра
 
 Решение следует пересмотреть, только если одновременно появится кандидат с совместимой полной license closure, подтверждённым architecture reuse не менее 70%, production Windows 10/11, общим Linux-portable core, заменяемым ASR, bounded-memory segmentation и insertion contract Nadikt. Высокий benchmark одного ASR или один успешный Windows build недостаточны.
 
 ## Следующий этап AI Factory
 
-Следующий рекомендуемый этап - `/aif-verify` для независимой проверки артефактов, затем отдельное решение пользователя о запуске Handy PoC. Реализацию приложения автоматически не начинать.
+Insertion spike выполнен и верифицирован отдельно. Следующие независимые исследовательские ветки:
+
+- локальный REWORK UI Automation и повторная Windows application/clipboard matrix;
+- ASR/VAD benchmark на целевом CPU;
+- отдельное решение пользователя о Handy PoC.
+
+Реализацию приложения автоматически не начинать только на основании этого исследования.
 
 ## Вопросы пользователю
 
 1. Одобрить ли отдельный Handy PoC после verification?
 2. Разрешить ли для PoC установку Rust/Node/system build dependencies в изолированной Ubuntu-среде?
-3. Какой Windows 10/11 компьютер использовать для insertion matrix и CPU benchmark?
+3. Какую изолированную Windows 10/11 среду использовать для повторной insertion matrix и CPU benchmark?
 
 ## Ограничения исследования
 
