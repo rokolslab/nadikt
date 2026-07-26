@@ -28,6 +28,8 @@ nadikt/
 |   |-- ARCHITECTURE.md                 # целевая Explicit Architecture
 |   |-- config.yaml                     # настройки AI Factory
 |   |-- DESCRIPTION.md                  # сводное описание продукта и стека
+|   |-- ROADMAP.md                      # стратегические milestones проекта
+|   |-- plans/                          # долгоживущие планы feature-веток
 |   `-- rules/base.md                   # базовые инженерные правила
 |-- .opencode/
 |   `-- skills/
@@ -50,8 +52,12 @@ nadikt/
 | `docs/requirements/Nadikt_TZ_v0.2.md` | Основное согласованное техническое задание Windows MVP. |
 | `docs/requirements/Nadikt_multilingual_ASR_requirements.md` | Требования к смешанной речи, движкам и модельным пакетам. |
 | `docs/architecture/Nadikt_development_strategy.md` | Стратегия общего ядра, раннего Windows-прототипа и последующей Ubuntu-версии. |
+| `docs/architecture/ADR-001-codebase-strategy.md` | Решение HYBRID по собственной кодовой базе и выборочному использованию сторонних решений. |
+| `docs/research/repository_assessment.md` | Технический и лицензионный анализ открытых приложений голосового ввода. |
+| `docs/research/handy_poc_plan.md` | Ограниченный план проверки Handy на Ubuntu и Windows. |
 | `.ai-factory/DESCRIPTION.md` | Краткий контекст продукта, выбранный стек и открытые технические решения. |
 | `.ai-factory/ARCHITECTURE.md` | Целевая Explicit Architecture, структура слоёв и правила зависимостей. |
+| `.ai-factory/ROADMAP.md` | Стратегическая последовательность от квалификации рисков до Windows MVP и Ubuntu-версии. |
 | `.ai-factory/config.yaml` | Язык артефактов, пути и настройки git-aware workflow. |
 | `.ai-factory/rules/base.md` | Начальные соглашения по модулям, ошибкам, журналированию и тестам. |
 | `.opencode/skills/nadikt-offline-asr/SKILL.md` | Правила автономной интеграции GigaAM/faster-whisper и benchmark. |
@@ -67,6 +73,10 @@ nadikt/
 | Требования к ASR | `docs/requirements/Nadikt_multilingual_ASR_requirements.md` | Смешанная русско-английская речь и сменные движки. |
 | Стратегия разработки | `docs/architecture/Nadikt_development_strategy.md` | Этапы Ubuntu core, Windows prototype, Windows MVP и Ubuntu version. |
 | Анализ аналогов | `docs/research/Nadikt_competitor_analysis.md` | Обоснование функций, рисков и границ MVP. |
+| Оценка репозиториев | `docs/research/repository_assessment.md` | Сравнение лицензий, архитектуры, платформ, оценок и fork gate. |
+| ADR стратегии кодовой базы | `docs/architecture/ADR-001-codebase-strategy.md` | Принятое решение HYBRID и условия пересмотра. |
+| Handy PoC | `docs/research/handy_poc_plan.md` | Измеримый план проверки оставшихся рисков Handy. |
+| Roadmap | `.ai-factory/ROADMAP.md` | Milestones исследования, прототипов, Windows MVP и Ubuntu-версии. |
 
 README пока отсутствует.
 
@@ -77,6 +87,7 @@ README пока отсутствует.
 | `AGENTS.md` | Фактическая карта репозитория и ключевых документов. |
 | `.ai-factory/DESCRIPTION.md` | Сводное описание продукта и технологических решений. |
 | `.ai-factory/ARCHITECTURE.md` | Архитектурный шаблон, границы и правила зависимостей после генерации. |
+| `.ai-factory/ROADMAP.md` | Текущие стратегические milestones и прогресс проекта. |
 | `.ai-factory/rules/base.md` | Базовые правила реализации. |
 | `.opencode/skills/nadikt-offline-asr/` | Проектные знания по offline ASR. |
 
