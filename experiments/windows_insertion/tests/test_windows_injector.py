@@ -18,6 +18,7 @@ class FakeInputApi:
         self.modifier = False
         self.sent_batches: list[tuple[object, ...]] = []
         self.send_count: int | None = None
+        self.send_counts: list[int] = []
         self.error: Exception | None = None
 
     def modifiers_down(self) -> bool:
@@ -27,6 +28,8 @@ class FakeInputApi:
         self.sent_batches.append(events)
         if self.error:
             raise self.error
+        if self.send_counts:
+            return self.send_counts.pop(0)
         return len(events) if self.send_count is None else self.send_count
 
     def last_error(self) -> int:
@@ -82,6 +85,15 @@ class WindowsInputInjectorTests(unittest.TestCase):
         cleanup = self.api.sent_batches[1]
         self.assertEqual(1, len(cleanup))
         self.assertTrue(cleanup[0].is_key_up)
+
+    def test_partial_cleanup_failure_is_logged_without_payload(self) -> None:
+        self.api.send_counts = [1, 0]
+
+        with self.assertLogs("nadikt.windows_insertion_spike", level="ERROR") as captured:
+            result = self.injector.dispatch_paste()
+
+        self.assertFalse(result.dispatched)
+        self.assertIn("[FIX:synthetic-cleanup]", "\n".join(captured.output))
 
     def test_dispatch_exception_is_safe_failure(self) -> None:
         self.api.error = RuntimeError("CANARY_injector_payload")

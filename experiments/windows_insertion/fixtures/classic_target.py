@@ -8,7 +8,7 @@ from ctypes import wintypes
 import os
 from pathlib import Path
 import sys
-from time import sleep
+from time import monotonic, sleep
 
 
 CLASS_NAME = "NadiktInsertionSpikeFixture"
@@ -163,7 +163,7 @@ def run_self_check(
     password: wintypes.HWND,
 ) -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from insertion_spike.contracts import InsertionMethod, InsertionRequest
+    from insertion_spike.contracts import InsertionMethod, InsertionRequest, OutcomeCode
     from insertion_spike.service import InsertionService
     from insertion_spike.windows_injector import CtypesInputApi, WindowsInputInjector
     from insertion_spike.windows_target import CtypesWindowsTargetApi, WindowsTargetAdapter
@@ -201,14 +201,22 @@ def run_self_check(
         ),
         normal_token,
     )
-    pending = wintypes.MSG()
-    while user32.PeekMessageW(ctypes.byref(pending), None, 0, 0, 1):
-        user32.TranslateMessage(ctypes.byref(pending))
-        user32.DispatchMessageW(ctypes.byref(pending))
-    text_length = user32.GetWindowTextLengthW(normal)
-    captured_text = ctypes.create_unicode_buffer(text_length + 1)
-    user32.GetWindowTextW(normal, captured_text, len(captured_text))
-    matched = captured_text.value.replace("\r\n", "\n") == "NADIKT_SYNTHETIC_Русский_😀\nLINE_2"
+    expected_text = "NADIKT_SYNTHETIC_Русский_😀\nLINE_2"
+    deadline = monotonic() + 0.5
+    matched = False
+    text_length = 0
+    while monotonic() < deadline:
+        pending = wintypes.MSG()
+        while user32.PeekMessageW(ctypes.byref(pending), None, 0, 0, 1):
+            user32.TranslateMessage(ctypes.byref(pending))
+            user32.DispatchMessageW(ctypes.byref(pending))
+        text_length = user32.GetWindowTextLengthW(normal)
+        captured_text = ctypes.create_unicode_buffer(text_length + 1)
+        user32.GetWindowTextW(normal, captured_text, len(captured_text))
+        matched = captured_text.value.replace("\r\n", "\n") == expected_text
+        if matched:
+            break
+        sleep(0.01)
     print(
         f"RESULT case=direct_unicode outcome={direct_outcome.code.value} matched={str(matched).lower()} actual_units={text_length}",
         flush=True,
@@ -241,7 +249,19 @@ def run_self_check(
     user32.DestroyWindow(window)
     destroyed_result = adapter.assess(destroyed_token)
     print(f"RESULT case=destroyed_target outcome={destroyed_result.code.value}", flush=True)
-    return 0
+    passed = all(
+        (
+            normal_result.is_safe,
+            direct_outcome.code is OutcomeCode.DIRECT_DISPATCHED,
+            matched,
+            changed_result.code is OutcomeCode.TARGET_CHANGED,
+            password_result.code is OutcomeCode.TARGET_PROTECTED,
+            blocked_outcome.code is OutcomeCode.TARGET_PROTECTED,
+            protected_unchanged,
+            destroyed_result.code is OutcomeCode.TARGET_UNAVAILABLE,
+        )
+    )
+    return 0 if passed else 1
 
 
 def main() -> int:

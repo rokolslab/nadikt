@@ -48,11 +48,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def create_runtime() -> RuntimeDependencies:
-    return RuntimeDependencies(
-        target=WindowsTargetAdapter(CtypesWindowsTargetApi()),
-        clipboard=WindowsClipboardAdapter(CtypesClipboardApi()),
-        injector=WindowsInputInjector(CtypesInputApi()),
-    )
+    target = WindowsTargetAdapter(CtypesWindowsTargetApi())
+    clipboard_api = CtypesClipboardApi()
+    try:
+        clipboard = WindowsClipboardAdapter(clipboard_api)
+        injector = WindowsInputInjector(CtypesInputApi())
+    except Exception as error:
+        get_logger().error(
+            "[FIX:runtime-cleanup] composition_failed=true exception_type=%s",
+            type(error).__name__,
+        )
+        clipboard_api.close()
+        raise
+    return RuntimeDependencies(target=target, clipboard=clipboard, injector=injector)
 
 
 def run(
@@ -74,36 +82,44 @@ def run(
         return 0
 
     runtime = dependencies or create_runtime()
-    print("phase=capture prepare_target=true")
-    _countdown(args.capture_countdown, active_logger, "capture")
     try:
-        captured_target = runtime.target.capture()
-    except TargetCaptureError:
-        print(f"outcome={OutcomeCode.TARGET_UNAVAILABLE.value}")
-        return 1
-    print("phase=capture complete=true")
-    print("phase=deliver keep_or_change_focus=true")
-    _countdown(args.delivery_countdown, active_logger, "deliver")
+        print("phase=capture prepare_target=true")
+        _countdown(args.capture_countdown, active_logger, "capture")
+        try:
+            captured_target = runtime.target.capture()
+        except TargetCaptureError:
+            print(f"outcome={OutcomeCode.TARGET_UNAVAILABLE.value}")
+            return 1
+        print("phase=capture complete=true")
+        print("phase=deliver keep_or_change_focus=true")
+        _countdown(args.delivery_countdown, active_logger, "deliver")
 
-    request = InsertionRequest(
-        request_id=f"manual-{uuid4().hex}",
-        text=SYNTHETIC_PAYLOAD,
-        method=InsertionMethod(args.method),
-    )
-    service = InsertionService(
-        runtime.target,
-        runtime.clipboard,
-        runtime.injector,
-        paste_restore_delay_ms=args.paste_delay_ms,
-        logger=active_logger,
-    )
-    outcome = service.deliver(request, captured_target)
-    print(f"outcome={outcome.code.value}")
-    print(f"result_retained={str(outcome.retained_in_memory).lower()}")
-    print(f"original_retained={str(outcome.original_snapshot_retained).lower()}")
-    if args.hold:
-        input("Press Enter to release retained in-memory state and exit: ")
-    return 0 if outcome.code in {OutcomeCode.DISPATCHED, OutcomeCode.DIRECT_DISPATCHED} else 1
+        request = InsertionRequest(
+            request_id=f"manual-{uuid4().hex}",
+            text=SYNTHETIC_PAYLOAD,
+            method=InsertionMethod(args.method),
+        )
+        service = InsertionService(
+            runtime.target,
+            runtime.clipboard,
+            runtime.injector,
+            paste_restore_delay_ms=args.paste_delay_ms,
+            logger=active_logger,
+        )
+        outcome = service.deliver(request, captured_target)
+        print(f"outcome={outcome.code.value}")
+        print(f"result_retained={str(outcome.retained_in_memory).lower()}")
+        print(f"original_retained={str(outcome.original_snapshot_retained).lower()}")
+        if args.hold:
+            input("Press Enter to release retained in-memory state and exit: ")
+        return 0 if outcome.code in {
+            OutcomeCode.DISPATCHED,
+            OutcomeCode.DIRECT_DISPATCHED,
+        } else 1
+    finally:
+        close = getattr(runtime.clipboard, "close", None)
+        if callable(close):
+            close()
 
 
 def _countdown(seconds: int, logger: logging.Logger, phase: str) -> None:

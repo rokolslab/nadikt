@@ -72,7 +72,7 @@ class InsertionRequest:
 class TargetToken:
     """Opaque target identity; platform values must not cross this boundary."""
 
-    identity: object = field(compare=True)
+    key: str = field(compare=True)
 
     def __repr__(self) -> str:
         return "TargetToken(<opaque>)"
@@ -143,6 +143,8 @@ class ClipboardAdapter(Protocol):
 
 @runtime_checkable
 class InputInjector(Protocol):
-    def dispatch_paste(self) -> DispatchResult: ...
+    def prepare_dispatch(self) -> bool: ...
 
-    def dispatch_unicode(self, text: str) -> DispatchResult: ...
+    def dispatch_paste(self, *, prepared: bool = False) -> DispatchResult: ...
+
+    def dispatch_unicode(self, text: str, *, prepared: bool = False) -> DispatchResult: ...

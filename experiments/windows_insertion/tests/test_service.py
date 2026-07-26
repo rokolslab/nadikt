@@ -32,6 +32,28 @@ class FakeTarget:
         return TargetAssessment(self.code)
 
 
+class SequenceTarget(FakeTarget):
+    def __init__(self, codes: list[OutcomeCode | None]) -> None:
+        super().__init__()
+        self.codes = list(codes)
+        self.assess_calls = 0
+
+    def assess(self, captured_target: TargetToken) -> TargetAssessment:
+        code = self.codes[min(self.assess_calls, len(self.codes) - 1)]
+        self.assess_calls += 1
+        return TargetAssessment(code)
+
+
+class RecordingTarget(FakeTarget):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__()
+        self.events = events
+
+    def assess(self, captured_target: TargetToken) -> TargetAssessment:
+        self.events.append("assess")
+        return TargetAssessment()
+
+
 class FakeClipboard:
     def __init__(self) -> None:
         self.preparation = ClipboardPreparation(True, ClipboardSnapshot("original"))
@@ -66,17 +88,36 @@ class FakeInjector:
         self.paste_error: Exception | None = None
         self.direct_error: Exception | None = None
         self.direct_calls = 0
+        self.paste_calls = 0
 
-    def dispatch_paste(self) -> DispatchResult:
+    def prepare_dispatch(self) -> bool:
+        return True
+
+    def dispatch_paste(self, *, prepared: bool = False) -> DispatchResult:
+        self.paste_calls += 1
         if self.paste_error:
             raise self.paste_error
         return self.paste_result
 
-    def dispatch_unicode(self, text: str) -> DispatchResult:
+    def dispatch_unicode(self, text: str, *, prepared: bool = False) -> DispatchResult:
         self.direct_calls += 1
         if self.direct_error:
             raise self.direct_error
         return self.direct_result
+
+
+class RecordingInjector(FakeInjector):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__()
+        self.events = events
+
+    def prepare_dispatch(self) -> bool:
+        self.events.append("modifier_preflight")
+        return True
+
+    def dispatch_unicode(self, text: str, *, prepared: bool = False) -> DispatchResult:
+        self.events.append("dispatch")
+        return super().dispatch_unicode(text, prepared=prepared)
 
 
 class BlockingTarget(FakeTarget):
@@ -123,6 +164,48 @@ class InsertionServiceTests(unittest.TestCase):
 
                 self.assertEqual(code, outcome.code)
                 self.assertFalse(clipboard.mutated)
+
+    def test_direct_dispatch_revalidates_target_immediately_before_input(self) -> None:
+        target = SequenceTarget([None, OutcomeCode.TARGET_CHANGED])
+        service = InsertionService(target, self.clipboard, self.injector)
+
+        outcome = service.deliver(
+            self.request(InsertionMethod.DIRECT), self.token
+        )
+
+        self.assertEqual(OutcomeCode.TARGET_CHANGED, outcome.code)
+        self.assertEqual(2, target.assess_calls)
+        self.assertEqual(0, self.injector.direct_calls)
+
+    def test_modifier_preflight_precedes_final_target_assessment(self) -> None:
+        events: list[str] = []
+        service = InsertionService(
+            RecordingTarget(events),
+            self.clipboard,
+            RecordingInjector(events),
+        )
+
+        outcome = service.deliver(
+            self.request(InsertionMethod.DIRECT), self.token
+        )
+
+        self.assertEqual(OutcomeCode.DIRECT_DISPATCHED, outcome.code)
+        self.assertEqual(
+            ["assess", "modifier_preflight", "assess", "dispatch"], events
+        )
+
+    def test_paste_revalidates_after_mutation_and_restores_on_change(self) -> None:
+        target = SequenceTarget([None, OutcomeCode.TARGET_CHANGED])
+        service = InsertionService(target, self.clipboard, self.injector)
+
+        outcome = service.deliver(
+            self.request(InsertionMethod.PASTE), self.token
+        )
+
+        self.assertEqual(OutcomeCode.TARGET_CHANGED, outcome.code)
+        self.assertEqual(2, target.assess_calls)
+        self.assertEqual(0, self.injector.paste_calls)
+        self.assertEqual(1, self.clipboard.restore_calls)
 
     def test_unsafe_clipboard_uses_direct_path_only_in_auto_mode(self) -> None:
         self.clipboard.preparation = ClipboardPreparation(False, code=OutcomeCode.CLIPBOARD_UNSAFE)

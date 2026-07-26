@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import MagicMock, patch
 
 from insertion_spike.contracts import OutcomeCode
 from insertion_spike.windows_target import (
+    CtypesWindowsTargetApi,
     WindowsIdentity,
     WindowsTargetAdapter,
 )
@@ -104,6 +106,20 @@ class WindowsTargetAdapterTests(unittest.TestCase):
         self.api.higher_integrity = None
 
         self.assertEqual(OutcomeCode.TARGET_UNAVAILABLE, self.adapter.assess(self.token).code)
+
+    def test_classic_style_read_error_fails_closed(self) -> None:
+        user32 = MagicMock()
+        user32.GetClassNameW.side_effect = lambda _, buffer, __: setattr(
+            buffer, "value", "Edit"
+        ) or 1
+        user32.GetWindowLongW.return_value = 0
+        api = object.__new__(CtypesWindowsTargetApi)
+        api._user32 = user32
+
+        with patch("insertion_spike.windows_target.ctypes.get_last_error", return_value=5):
+            result = api.classic_password_state(identity())
+
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

@@ -25,9 +25,11 @@ class ContractPrivacyTests(unittest.TestCase):
         self.assertIn("request-1", rendered)
 
     def test_opaque_repr_excludes_platform_and_clipboard_state(self) -> None:
-        rendered = repr(TargetToken(CANARY)) + repr(ClipboardSnapshot(CANARY))
+        token = TargetToken(CANARY)
+        rendered = repr(token) + repr(ClipboardSnapshot(CANARY))
 
         self.assertNotIn(CANARY, rendered)
+        self.assertFalse(hasattr(token, "identity"))
 
     def test_log_level_is_configurable(self) -> None:
         with patch.dict(os.environ, {"LOG_LEVEL": "DEBUG"}):

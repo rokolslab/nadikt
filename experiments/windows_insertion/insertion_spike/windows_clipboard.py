@@ -26,6 +26,7 @@ CF_HDROP = 15
 CF_DIBV5 = 17
 SUPPORTED_FORMATS = frozenset({CF_DIB, CF_UNICODETEXT, CF_HDROP, CF_DIBV5})
 GMEM_MOVEABLE = 0x0002
+HWND_MESSAGE = -3
 
 
 class ClipboardAccessError(RuntimeError):
@@ -146,6 +147,11 @@ class WindowsClipboardAdapter:
             win32_code if isinstance(win32_code, int) else "unavailable",
         )
 
+    def close(self) -> None:
+        close = getattr(self._api, "close", None)
+        if callable(close):
+            close()
+
 
 class CtypesClipboardApi:
     """Win32 global-memory implementation for cloneable clipboard formats."""
@@ -158,11 +164,28 @@ class CtypesClipboardApi:
         self._lock_attempts = max(1, lock_attempts)
         self._lock_delay_seconds = max(0, lock_delay_ms) / 1000
         self._configure_prototypes()
+        self._owner_window = self._user32.CreateWindowExW(
+            0,
+            "STATIC",
+            None,
+            0,
+            0,
+            0,
+            0,
+            0,
+            wintypes.HWND(HWND_MESSAGE),
+            None,
+            None,
+            None,
+        )
+        if not self._owner_window:
+            raise ClipboardAccessError("clipboard_owner_window_failed")
+        get_logger().debug("[FIX:clipboard-owner] owner_window_created=true")
 
     @contextmanager
     def opened(self) -> Iterator[None]:
         for attempt in range(self._lock_attempts):
-            if self._user32.OpenClipboard(None):
+            if self._user32.OpenClipboard(self._owner_window):
                 break
             if attempt + 1 < self._lock_attempts:
                 sleep(self._lock_delay_seconds)
@@ -172,6 +195,11 @@ class CtypesClipboardApi:
             yield
         finally:
             self._user32.CloseClipboard()
+
+    def close(self) -> None:
+        if self._owner_window:
+            self._user32.DestroyWindow(self._owner_window)
+            self._owner_window = None
 
     def sequence_number(self) -> int:
         return int(self._user32.GetClipboardSequenceNumber())
@@ -227,6 +255,22 @@ class CtypesClipboardApi:
             raise ctypes.WinError(ctypes.get_last_error())
 
     def _configure_prototypes(self) -> None:
+        self._user32.CreateWindowExW.restype = wintypes.HWND
+        self._user32.CreateWindowExW.argtypes = (
+            wintypes.DWORD,
+            wintypes.LPCWSTR,
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.HWND,
+            wintypes.HANDLE,
+            wintypes.HINSTANCE,
+            wintypes.LPVOID,
+        )
+        self._user32.DestroyWindow.argtypes = (wintypes.HWND,)
         self._user32.OpenClipboard.argtypes = (wintypes.HWND,)
         self._user32.GetClipboardData.restype = wintypes.HANDLE
         self._user32.GetClipboardData.argtypes = (wintypes.UINT,)

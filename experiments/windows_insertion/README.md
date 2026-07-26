@@ -37,13 +37,16 @@ From `experiments/windows_insertion`:
 ```powershell
 python fixtures/classic_target.py
 start fixtures/password_form.html
-python fixtures/clipboard_racer.py --delay-ms 500
+python fixtures/clipboard_racer.py --confirm --delay-ms 500
 ```
 
 `classic_target.py` exposes one native `EDIT` and one native `ES_PASSWORD`
 control. The local HTML page exposes two normal controls and one password
 control in the same browser window. `clipboard_racer.py` writes only a fixed
-synthetic value and reports readiness/case IDs without printing the value.
+synthetic value and reports readiness/case IDs without printing the value. It
+must run during a CLI clipboard transaction: `--confirm` is mandatory, and the
+fixture refuses mutation unless the current clipboard contains exactly the
+known CLI synthetic payload (plus Windows-synthesized text formats).
 
 An elevated case is started manually from an elevated terminal. The spike
 never requests elevation or bypasses UIPI.
@@ -98,7 +101,7 @@ name was printed.
 
 | Case | Layer | Result | Observed outcome |
 |---|---|---|---|
-| Contracts and boundary failures | automated, injected APIs | PASS | 39 tests passed |
+| Contracts and boundary failures | automated, injected APIs | PASS | 49 tests passed |
 | Unchanged native `EDIT` target | controlled Win32 fixture | PASS | `safe` |
 | Direct Cyrillic, emoji, newline | controlled Win32 fixture | PASS | `direct_dispatched`, content matched internally |
 | Another control in same window | controlled Win32 fixture | PASS | `target_changed` |
@@ -130,6 +133,13 @@ This does not claim inspection of arbitrary OS process dumps.
 - The standard-library target facade detects native `EDIT`/`ES_PASSWORD` and
   process integrity, but has no UI Automation provider. Non-classic controls
   therefore fail closed as `target_unavailable`.
+- Platform identities remain inside the Windows adapter; the portable token
+  carries only a random opaque key. Modifier wait/preflight happens before the
+  final target assessment; dispatch then performs only a non-blocking modifier
+  check before direct or paste input.
+- Real clipboard access uses a private message-only owner window. The window
+  is closed deterministically when CLI delivery ends; `OpenClipboard(NULL)` is
+  never used for mutation/restoration.
 - Real `Ctrl+V` and clipboard restoration were not exercised because the
   pre-existing clipboard included an unsupported format. Overwriting it would
   violate the spike's own safety invariant.

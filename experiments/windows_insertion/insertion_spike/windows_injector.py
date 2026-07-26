@@ -52,9 +52,17 @@ class WindowsInputInjector:
         self._modifier_wait_seconds = max(0, modifier_wait_ms) / 1000
         self._logger = logger or get_logger()
 
-    def dispatch_paste(self) -> DispatchResult:
+    def prepare_dispatch(self) -> bool:
+        ready = self._wait_for_released_modifiers()
+        self._logger.debug(
+            "[FIX:modifier-preflight] modifiers_released=%s",
+            ready,
+        )
+        return ready
+
+    def dispatch_paste(self, *, prepared: bool = False) -> DispatchResult:
         self._logger.debug("injector phase=dispatch method=paste event_count=4")
-        if not self._wait_for_released_modifiers():
+        if not self._ready_for_immediate_dispatch(prepared):
             self._logger.warning("injector physical_modifier=true")
             return DispatchResult(False, OutcomeCode.DISPATCH_FAILED)
         events = (
@@ -65,13 +73,13 @@ class WindowsInputInjector:
         )
         return self._send_complete(events)
 
-    def dispatch_unicode(self, text: str) -> DispatchResult:
+    def dispatch_unicode(self, text: str, *, prepared: bool = False) -> DispatchResult:
         code_units = self._utf16_code_units(text)
         self._logger.debug(
             "injector phase=dispatch method=direct event_count=%d",
             len(code_units) * 2,
         )
-        if not self._wait_for_released_modifiers():
+        if not self._ready_for_immediate_dispatch(prepared):
             self._logger.warning("injector physical_modifier=true")
             return DispatchResult(False, OutcomeCode.DISPATCH_FAILED)
         events = tuple(
@@ -83,6 +91,12 @@ class WindowsInputInjector:
             )
         )
         return self._send_complete(events)
+
+    def _ready_for_immediate_dispatch(self, prepared: bool) -> bool:
+        if not prepared and not self.prepare_dispatch():
+            return False
+        # Do not wait here: service performs final target assessment after preflight.
+        return not self._api.modifiers_down()
 
     def _wait_for_released_modifiers(self) -> bool:
         deadline = monotonic() + self._modifier_wait_seconds
@@ -141,10 +155,17 @@ class WindowsInputInjector:
         )
         if cleanup:
             try:
-                self._api.send(cleanup)
+                released = self._api.send(cleanup)
+                if released != len(cleanup):
+                    self._logger.error(
+                        "[FIX:synthetic-cleanup] event_count_mismatch=true expected=%d sent=%d win32_code=%d",
+                        len(cleanup),
+                        released,
+                        self._api.last_error(),
+                    )
             except Exception as error:
                 self._logger.error(
-                    "injector operation=synthetic_cleanup exception_type=%s",
+                    "[FIX:synthetic-cleanup] exception_type=%s",
                     type(error).__name__,
                 )
 

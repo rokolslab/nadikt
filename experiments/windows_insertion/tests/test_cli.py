@@ -1,6 +1,7 @@
 import contextlib
 import io
 import unittest
+from unittest.mock import MagicMock, patch
 
 from insertion_spike import cli
 from insertion_spike.contracts import (
@@ -29,6 +30,7 @@ class FakeTarget:
 class FakeClipboard:
     def __init__(self) -> None:
         self.commit_calls = 0
+        self.close_calls = 0
 
     def prepare(self):
         return ClipboardPreparation(True, ClipboardSnapshot("original"))
@@ -39,12 +41,18 @@ class FakeClipboard:
     def restore(self, snapshot):
         return RestoreResult(True)
 
+    def close(self):
+        self.close_calls += 1
+
 
 class FakeInjector:
-    def dispatch_paste(self):
+    def prepare_dispatch(self):
+        return True
+
+    def dispatch_paste(self, *, prepared=False):
         return DispatchResult(True)
 
-    def dispatch_unicode(self, text):
+    def dispatch_unicode(self, text, *, prepared=False):
         return DispatchResult(True)
 
 
@@ -95,9 +103,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(0, result)
         self.assertEqual(1, self.target.capture_calls)
         self.assertEqual(1, self.clipboard.commit_calls)
+        self.assertEqual(1, self.clipboard.close_calls)
         self.assertIn("phase=capture complete=true", output)
         self.assertIn("outcome=dispatched", output)
         self.assertNotIn(cli.SYNTHETIC_PAYLOAD, output)
+
+    def test_runtime_composition_closes_clipboard_owner_on_later_failure(self) -> None:
+        clipboard_api = MagicMock()
+        with (
+            patch.object(cli, "CtypesWindowsTargetApi"),
+            patch.object(cli, "WindowsTargetAdapter"),
+            patch.object(cli, "CtypesClipboardApi", return_value=clipboard_api),
+            patch.object(cli, "WindowsClipboardAdapter"),
+            patch.object(cli, "CtypesInputApi", side_effect=RuntimeError("input_failed")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "input_failed"):
+                cli.create_runtime()
+
+        clipboard_api.close.assert_called_once_with()
 
 
 if __name__ == "__main__":

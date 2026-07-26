@@ -81,8 +81,8 @@ class InsertionService:
                 return self._finish(request.request_id, assessment_code, started)
 
             if request.method is InsertionMethod.DIRECT:
-                return self._dispatch_direct(request, started)
-            return self._dispatch_with_clipboard(request, started)
+                return self._dispatch_direct(request, captured_target, started)
+            return self._dispatch_with_clipboard(request, captured_target, started)
         finally:
             self._delivery_lock.release()
 
@@ -101,16 +101,26 @@ class InsertionService:
     def _dispatch_direct(
         self,
         request: InsertionRequest,
+        captured_target: TargetToken,
         started: float,
     ) -> InsertionOutcome:
+        if not self._prepare_input_dispatch():
+            return self._finish(request.request_id, OutcomeCode.DISPATCH_FAILED, started)
+        self._logger.debug("[FIX:final-target] phase=revalidate_before_direct")
+        assessment_code = self._assess_target(captured_target)
+        if assessment_code is not None:
+            return self._finish(request.request_id, assessment_code, started)
         self._logger.debug("insertion phase=dispatch method=direct")
-        result = self._safe_dispatch(lambda: self._injector.dispatch_unicode(request.text))
+        result = self._safe_dispatch(
+            lambda: self._injector.dispatch_unicode(request.text, prepared=True)
+        )
         code = OutcomeCode.DIRECT_DISPATCHED if result.dispatched else result.code
         return self._finish(request.request_id, code or OutcomeCode.DISPATCH_FAILED, started)
 
     def _dispatch_with_clipboard(
         self,
         request: InsertionRequest,
+        captured_target: TargetToken,
         started: float,
     ) -> InsertionOutcome:
         self._logger.debug("insertion phase=clipboard_prepare")
@@ -123,7 +133,7 @@ class InsertionService:
         if not preparation.is_safe or preparation.snapshot is None:
             self._logger.warning("insertion clipboard_safe=false")
             if request.method is InsertionMethod.AUTO:
-                return self._dispatch_direct(request, started)
+                return self._dispatch_direct(request, captured_target, started)
             return self._finish(request.request_id, OutcomeCode.CLIPBOARD_UNSAFE, started)
 
         snapshot = preparation.snapshot
@@ -142,12 +152,39 @@ class InsertionService:
                 started,
             )
 
+        if not self._prepare_input_dispatch():
+            return self._restore_after_dispatch(
+                request.request_id,
+                snapshot,
+                OutcomeCode.DISPATCH_FAILED,
+                started,
+            )
+        self._logger.debug("[FIX:final-target] phase=revalidate_before_paste")
+        assessment_code = self._assess_target(captured_target)
+        if assessment_code is not None:
+            return self._restore_after_dispatch(
+                request.request_id,
+                snapshot,
+                assessment_code,
+                started,
+            )
+
         self._logger.debug("insertion phase=dispatch method=paste")
-        dispatch = self._safe_dispatch(self._injector.dispatch_paste)
+        dispatch = self._safe_dispatch(
+            lambda: self._injector.dispatch_paste(prepared=True)
+        )
         dispatch_code = OutcomeCode.DISPATCHED if dispatch.dispatched else (
             dispatch.code or OutcomeCode.DISPATCH_FAILED
         )
         return self._restore_after_dispatch(request.request_id, snapshot, dispatch_code, started)
+
+    def _prepare_input_dispatch(self) -> bool:
+        self._logger.debug("[FIX:modifier-preflight] phase=before_final_target")
+        try:
+            return self._injector.prepare_dispatch()
+        except Exception as error:
+            self._log_boundary_error("injector", "prepare_dispatch", error)
+            return False
 
     def _restore_after_dispatch(
         self,

@@ -8,6 +8,7 @@ from ctypes import wintypes
 import logging
 import os
 from typing import Protocol
+from uuid import uuid4
 
 from .contracts import OutcomeCode, TargetAssessment, TargetToken, get_logger
 
@@ -58,6 +59,7 @@ class WindowsTargetAdapter:
     ) -> None:
         self._api = api
         self._logger = logger or get_logger()
+        self._captured_identities: dict[str, WindowsIdentity] = {}
 
     def capture(self) -> TargetToken:
         self._logger.debug("target phase=capture")
@@ -69,12 +71,15 @@ class WindowsTargetAdapter:
             "target captured=true automation_identity=%s",
             identity.automation_id is not None,
         )
-        return TargetToken(identity)
+        key = uuid4().hex
+        self._captured_identities[key] = identity
+        self._logger.debug("[FIX:opaque-target] identity_stored_in_adapter=true")
+        return TargetToken(key)
 
     def assess(self, captured_target: TargetToken) -> TargetAssessment:
         self._logger.debug("target phase=revalidate")
-        captured = captured_target.identity
-        if not isinstance(captured, WindowsIdentity):
+        captured = self._captured_identities.get(captured_target.key)
+        if captured is None:
             self._logger.warning("target token_valid=false")
             return TargetAssessment(OutcomeCode.TARGET_UNAVAILABLE)
         if not self._api.is_window(captured):
@@ -180,7 +185,10 @@ class CtypesWindowsTargetApi:
             return None
         if class_name.value.casefold() != "edit":
             return None
+        ctypes.set_last_error(0)
         style = self._user32.GetWindowLongW(identity.focused_control, GWL_STYLE)
+        if style == 0 and ctypes.get_last_error() != 0:
+            return None
         return bool(style & ES_PASSWORD)
 
     def automation_password_state(self, identity: WindowsIdentity) -> bool | None:
@@ -261,6 +269,7 @@ class CtypesWindowsTargetApi:
     def _configure_prototypes(self) -> None:
         self._user32.GetForegroundWindow.restype = wintypes.HWND
         self._user32.GetAncestor.restype = wintypes.HWND
+        self._user32.GetAncestor.argtypes = (wintypes.HWND, wintypes.UINT)
         self._user32.GetWindowThreadProcessId.argtypes = (
             wintypes.HWND,
             ctypes.POINTER(wintypes.DWORD),

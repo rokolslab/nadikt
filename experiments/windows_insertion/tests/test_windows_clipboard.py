@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 import unittest
+from unittest.mock import MagicMock, patch
 
 from insertion_spike.contracts import OutcomeCode
 from insertion_spike.windows_clipboard import (
@@ -8,6 +9,7 @@ from insertion_spike.windows_clipboard import (
     CF_HDROP,
     CF_UNICODETEXT,
     ClipboardAccessError,
+    CtypesClipboardApi,
     WindowsClipboardAdapter,
 )
 
@@ -53,6 +55,21 @@ class FakeClipboardApi:
 
 
 class WindowsClipboardAdapterTests(unittest.TestCase):
+    def test_win32_clipboard_is_opened_with_non_null_owner(self) -> None:
+        user32 = MagicMock()
+        kernel32 = MagicMock()
+        user32.OpenClipboard.return_value = True
+        with patch(
+            "insertion_spike.windows_clipboard.ctypes.WinDLL",
+            side_effect=(user32, kernel32),
+        ):
+            api = CtypesClipboardApi(lock_attempts=1)
+            with api.opened():
+                pass
+
+        owner = user32.OpenClipboard.call_args.args[0]
+        self.assertNotIn(owner, (None, 0))
+
     def test_empty_and_supported_formats_round_trip(self) -> None:
         cases = (
             {},

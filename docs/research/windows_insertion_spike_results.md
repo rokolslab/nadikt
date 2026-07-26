@@ -15,7 +15,7 @@
 - Windows 11 Pro x64, версия `10.0.22621`, build `22621`.
 - Python `3.12.0`.
 - Controlled fixture: native Win32 `EDIT` и `ES_PASSWORD`.
-- Automated suite: 39 unit/contract tests на injected API facades.
+- Automated suite: 49 unit/contract tests на injected API facades.
 - Установлены: Notepad `10.0.22621.3672`, Edge `150.0.4078.99`, Chrome
   `150.0.7871.125`, Firefox `147.0.2`, Word `16.0.17932.20884`.
 - 1C не найдена через Windows App Paths.
@@ -24,6 +24,9 @@
 
 - Неизменный native `EDIT` распознаётся как безопасная цель.
 - Смена focused control внутри того же окна даёт `target_changed` до delivery.
+- Modifier wait/preflight выполняется до финальной target assessment. После
+  неё injector делает только non-blocking modifier check и немедленный
+  `SendInput`; правило одинаково для paste, direct и auto fallback.
 - Native `ES_PASSWORD` даёт `target_protected`; попытка direct delivery не
   меняет control.
 - Уничтоженный target даёт `target_unavailable`.
@@ -38,6 +41,10 @@
 - Реальный текущий clipboard содержал unsupported format. `prepare()` вернул
   `clipboard_unsafe` без mutation, поэтому пользовательские данные не были
   перезаписаны ради теста.
+- Win32 clipboard transaction открывается с private message-only owner HWND,
+  а не с `NULL`; lifecycle owner window завершается явно.
+- Opaque target token содержит только случайный key, а HWND/PID/control и
+  process creation marker остаются во внутреннем store Windows adapter.
 - `Ctrl+V` outcome называется только `dispatched`; подтверждение consumption
   destination application отсутствует.
 - Canary payload отсутствовал в проверенных `repr`, boundary logs, CLI
