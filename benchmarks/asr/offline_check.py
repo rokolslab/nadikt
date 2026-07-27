@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .logging_config import get_logger
 LOGGER = get_logger(__name__)
@@ -35,7 +35,7 @@ def current_offline_policy() -> bool:
 def validate_local_package(package_id: str, package_path: Path, root: Path) -> OfflineCheckResult:
     """Classify local package availability without attempting network access."""
 
-    if ".." in package_path.parts or package_path.is_absolute():
+    if _is_unsafe_package_path(str(package_path)):
         result = OfflineCheckResult(
             outcome="invalid_package_path",
             network_block_required=current_offline_policy(),
@@ -64,3 +64,14 @@ def validate_local_package(package_id: str, package_path: Path, root: Path) -> O
     )
     LOGGER.info("offline_package_check", extra=result.safe_log_context())
     return result
+
+
+def _is_unsafe_package_path(value: str) -> bool:
+    normalized = value.replace("\\", "/")
+    posix_path = PurePosixPath(normalized)
+    return (
+        ".." in posix_path.parts
+        or PurePosixPath(value).is_absolute()
+        or PureWindowsPath(value).is_absolute()
+        or value.startswith("\\\\")
+    )

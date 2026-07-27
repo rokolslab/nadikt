@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 from benchmarks.asr.dry_run import run_dry_run
 from benchmarks.asr.manifests import load_json, validate_dataset_manifest, validate_model_inventory
+from benchmarks.asr.offline_check import validate_local_package
 from benchmarks.asr.privacy_audit import audit_text_artifact
 from benchmarks.asr.quality_metrics import cer, english_term_accuracy, latin_preservation_rate, wer
 from benchmarks.asr.segmentation_manifest import SegmentDescriptor, validate_segments
@@ -47,11 +48,24 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
     def test_dataset_reports_invalid_duration_type(self) -> None:
         dataset = load_json(ROOT / "benchmarks/asr/datasets/dataset.example.json")
         dataset["samples"][0]["duration_seconds"] = "not-a-number"
+        dataset["samples"][1]["duration_seconds"] = True
 
         samples, errors = validate_dataset_manifest(dataset)
 
         self.assertIn("sample_0_invalid_duration_type", errors)
-        self.assertEqual(5, len(samples))
+        self.assertIn("sample_1_invalid_duration_type", errors)
+        self.assertEqual(4, len(samples))
+
+    def test_dataset_reports_bad_expected_terms_type(self) -> None:
+        dataset = load_json(ROOT / "benchmarks/asr/datasets/dataset.example.json")
+        dataset["samples"][0]["expected_english_terms"] = None
+        dataset["samples"][1]["expected_english_terms"] = ["Windows", 123]
+
+        samples, errors = validate_dataset_manifest(dataset)
+
+        self.assertIn("sample_0_expected_english_terms_not_list", errors)
+        self.assertIn("sample_1_expected_english_term_not_string", errors)
+        self.assertEqual(4, len(samples))
 
     def test_model_inventory_rejects_unsafe_paths(self) -> None:
         models = load_json(ROOT / "model_packs/model_inventory.example.json")
@@ -73,6 +87,16 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
         self.assertIn("package_0_capabilities_not_object", errors)
         self.assertIn("package_1_critical_files_not_list", errors)
         self.assertEqual(2, len(packages))
+
+    def test_offline_check_rejects_windows_absolute_path_directly(self) -> None:
+        result = validate_local_package(
+            "unsafe-package",
+            Path("C:\\Users\\person\\model"),
+            ROOT,
+        )
+
+        self.assertEqual("invalid_package_path", result.outcome)
+        self.assertFalse(result.network_attempted)
 
     def test_dry_run_reports_missing_packages_without_payload(self) -> None:
         summary = run_dry_run(

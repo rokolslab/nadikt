@@ -110,7 +110,7 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
 
         category = str(item["category"])
         duration_value = item["duration_seconds"]
-        if not isinstance(duration_value, (int, float)):
+        if isinstance(duration_value, bool) or not isinstance(duration_value, (int, float)):
             errors.append(f"sample_{index}_invalid_duration_type")
             continue
         duration = float(duration_value)
@@ -125,7 +125,15 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
         if _is_unsafe_path_label(str(item["reference_label"])):
             errors.append(f"sample_{index}_unsafe_reference_label")
 
-        terms = tuple(str(term) for term in item.get("expected_english_terms", ()))
+        expected_terms = item["expected_english_terms"]
+        if not isinstance(expected_terms, list):
+            errors.append(f"sample_{index}_expected_english_terms_not_list")
+            continue
+        if not all(isinstance(term, str) for term in expected_terms):
+            errors.append(f"sample_{index}_expected_english_term_not_string")
+            continue
+
+        terms = tuple(expected_terms)
         samples.append(
             SampleManifest(
                 sample_id=str(item["sample_id"]),
