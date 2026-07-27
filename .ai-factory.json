@@ -24,6 +24,7 @@
         "aif-loop",
         "aif-plan",
         "aif-qa",
+        "aif-qa-check",
         "aif-reference",
         "aif-review",
         "aif-roadmap",
@@ -31,9 +32,15 @@
         "aif-rules-check",
         "aif-security-checklist",
         "aif-skill-generator",
-        "aif-verify",
-        "aif-qa-check"
+        "aif-verify"
       ],
+      "mcp": {
+        "github": false,
+        "filesystem": false,
+        "postgres": false,
+        "chromeDevtools": false,
+        "playwright": false
+      },
       "managedSkills": {
         "aif": {
           "sourceHash": "020afa5ba4b141ce3d718beadfcedb38e07eee500900869a05a18534cc90ac3e",
@@ -111,6 +118,10 @@
           "sourceHash": "d806c10e4091c907a69378e4ab5f0aafa6dc3765b2f935fd1dbc2dc0b8067bb4",
           "installedHash": "4c83461b0885d4548f37d1ceaaa8e77818d1a05980a6d80ef8609fe724e44703"
         },
+        "aif-qa-check": {
+          "sourceHash": "38c93c72d324d352432a95eb68834d67863a9a55f4fbb6c363da24809708d260",
+          "installedHash": "e709997975ddfe0d9bee82156ae3e7fe0567771c70776c6b3c677f162375cd85"
+        },
         "aif-reference": {
           "sourceHash": "3c74ce7280f1a1a5be50aeaef008dfd42482fb30461f3e1adef4ea107f1dd103",
           "installedHash": "374d523bc861302641e5ecdb9f90536f6603596865537f9838897667a5e9926c"
@@ -142,25 +153,9 @@
         "aif-verify": {
           "sourceHash": "dcb223564d924ca60132608f8f7b97858b2eb931cd27056d969c1fd88528c643",
           "installedHash": "59cf32514fde42c1da0cadcdba74d02eac529eeac5b65527ba1344046aaaf1b2"
-        },
-        "aif-qa-check": {
-          "sourceHash": "38c93c72d324d352432a95eb68834d67863a9a55f4fbb6c363da24809708d260",
-          "installedHash": "e709997975ddfe0d9bee82156ae3e7fe0567771c70776c6b3c677f162375cd85"
         }
       },
-      "installedAgentFiles": [],
-      "agentFileSources": {},
-      "managedAgentFiles": {},
-      "configFiles": [],
-      "installedConfigFiles": [],
-      "managedConfigFiles": {},
-      "mcp": {
-        "github": false,
-        "filesystem": false,
-        "postgres": false,
-        "chromeDevtools": false,
-        "playwright": false
-      }
+      "agentFileSources": {}
     }
   ],
   "extensions": []
