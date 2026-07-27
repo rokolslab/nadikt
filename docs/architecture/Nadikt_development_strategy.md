@@ -378,6 +378,8 @@ nadikt/
 
 CI не заменяет ручное тестирование микрофона, горячих клавиш, плавающего окна и вставки в реальные Windows-приложения.
 
+Windows insertion spike от 2026-07-26 завершён с решением [`REWORK`](../research/windows_insertion_spike_results.md). Controlled classic Win32 checks подтверждены, но UI Automation, elevated case и обязательная Notepad/browser/Word/1C matrix остаются gate до production adapter.
+
 ## 10. Что не следует делать
 
 Не рекомендуется:
@@ -402,4 +404,3 @@ CI не заменяет ручное тестирование микрофон�
 5. первым законченным продуктом становится Windows MVP;
 6. Ubuntu-версия создаётся после Windows MVP на базе общего ядра;
 7. финальные сборки выполняются и испытываются в соответствующих целевых ОС.
-

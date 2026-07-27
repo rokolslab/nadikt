@@ -1,0 +1,200 @@
+"""Two-stage manual CLI for the Windows insertion safety spike."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import logging
+import signal
+import sys
+from time import sleep
+from typing import Sequence
+from uuid import uuid4
+
+from .contracts import (
+    InsertionMethod,
+    InsertionRequest,
+    OutcomeCode,
+    TargetAdapter,
+    ClipboardAdapter,
+    InputInjector,
+    get_logger,
+)
+from .service import InsertionService
+from .windows_clipboard import CtypesClipboardApi, WindowsClipboardAdapter
+from .windows_injector import CtypesInputApi, WindowsInputInjector
+from .windows_target import CtypesWindowsTargetApi, TargetCaptureError, WindowsTargetAdapter
+
+
+SYNTHETIC_PAYLOAD = "NADIKT_SPIKE_Русский_English_😀\nLINE_2"
+
+
+@dataclass(frozen=True)
+class RuntimeDependencies:
+    target: TargetAdapter
+    clipboard: ClipboardAdapter
+    injector: InputInjector
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Nadikt insertion safety spike")
+    parser.add_argument("--method", choices=[item.value for item in InsertionMethod], default="auto")
+    parser.add_argument("--capture-countdown", type=int, default=3)
+    parser.add_argument("--delivery-countdown", type=int, default=3)
+    parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--cancel", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--hold", action="store_true")
+    return parser
+
+
+def create_runtime() -> RuntimeDependencies:
+    target = WindowsTargetAdapter(CtypesWindowsTargetApi())
+    clipboard_api = CtypesClipboardApi()
+    try:
+        clipboard = WindowsClipboardAdapter(clipboard_api)
+        injector = WindowsInputInjector(CtypesInputApi())
+    except Exception as error:
+        get_logger().error(
+            "[FIX:runtime-cleanup] composition_failed=true exception_type=%s",
+            type(error).__name__,
+        )
+        clipboard_api.close()
+        raise
+    return RuntimeDependencies(target=target, clipboard=clipboard, injector=injector)
+
+
+def run(
+    argv: Sequence[str] | None = None,
+    *,
+    dependencies: RuntimeDependencies | None = None,
+    logger: logging.Logger | None = None,
+) -> int:
+    args = build_parser().parse_args(argv)
+    active_logger = logger or get_logger()
+    active_logger.info("cli phase=start method=%s dry_run=%s", args.method, args.dry_run)
+    if not args.confirm or args.cancel:
+        print(f"outcome={OutcomeCode.CANCELLED.value}")
+        return 2
+    if args.dry_run:
+        print("phase=capture dry_run=true")
+        print("phase=deliver dry_run=true")
+        print(f"outcome={OutcomeCode.CANCELLED.value}")
+        return 0
+    if args.method != InsertionMethod.DIRECT.value and not args.hold:
+        print("outcome=cancelled restoration_confirmation_required=true")
+        return 2
+    if (
+        args.method != InsertionMethod.DIRECT.value
+        and dependencies is None
+        and not sys.stdin.isatty()
+    ):
+        print("outcome=cancelled interactive_terminal_required=true")
+        return 2
+
+    runtime = dependencies or create_runtime()
+    try:
+        print("phase=capture prepare_target=true")
+        _countdown(args.capture_countdown, active_logger, "capture")
+        try:
+            captured_target = runtime.target.capture()
+        except TargetCaptureError:
+            print(f"outcome={OutcomeCode.TARGET_UNAVAILABLE.value}")
+            return 1
+        print("phase=capture complete=true")
+        print("phase=deliver keep_or_change_focus=true")
+        _countdown(args.delivery_countdown, active_logger, "deliver")
+
+        request = InsertionRequest(
+            request_id=f"manual-{uuid4().hex}",
+            text=SYNTHETIC_PAYLOAD,
+            method=InsertionMethod(args.method),
+        )
+        service = InsertionService(
+            runtime.target,
+            runtime.clipboard,
+            runtime.injector,
+            logger=active_logger,
+        )
+        previous_sigint = _defer_sigint_for_clipboard(args.method)
+        try:
+            outcome = service.deliver(request, captured_target)
+            print(f"outcome={outcome.code.value}")
+            print(f"result_retained={str(outcome.retained_in_memory).lower()}")
+            print(f"original_retained={str(outcome.original_snapshot_retained).lower()}")
+            if outcome.original_snapshot_retained:
+                print("restoration_pending=true")
+                _resolve_pending_restoration(service, request.request_id)
+            elif args.hold:
+                input("Press Enter to release retained in-memory state and exit: ")
+            return 0 if outcome.code in {
+                OutcomeCode.DISPATCHED,
+                OutcomeCode.DIRECT_DISPATCHED,
+            } else 1
+        finally:
+            if previous_sigint is not None:
+                signal.signal(signal.SIGINT, previous_sigint)
+    finally:
+        close = getattr(runtime.clipboard, "close", None)
+        if callable(close):
+            close()
+
+
+def _countdown(seconds: int, logger: logging.Logger, phase: str) -> None:
+    duration = max(0, seconds)
+    logger.debug("cli phase=%s countdown_seconds=%d", phase, duration)
+    for _ in range(duration):
+        sleep(1)
+
+
+def _defer_sigint_for_clipboard(method: str):
+    if method == InsertionMethod.DIRECT.value:
+        return None
+    try:
+        previous = signal.getsignal(signal.SIGINT)
+        signal.signal(
+            signal.SIGINT,
+            lambda *_: print("restoration_pending=true sigint_deferred=true"),
+        )
+        return previous
+    except ValueError:
+        return None
+
+
+def _resolve_pending_restoration(service: InsertionService, request_id: str) -> None:
+    while True:
+        try:
+            confirmation = input(
+                "After verifying paste handling, type RESTORE to restore the original clipboard or DISCARD_ORIGINAL to keep synthetic text: "
+            ).strip()
+        except KeyboardInterrupt:
+            print("restoration_pending=true input_interrupted=true")
+            continue
+        except EOFError:
+            print("restoration_pending=true eof_wait=true")
+            sleep(1)
+            continue
+        if confirmation == "RESTORE":
+            restore = service.restore_original(request_id)
+            print(f"restored={str(restore.restored).lower()}")
+            print(f"external_change={str(restore.external_change).lower()}")
+            if restore.restored or restore.external_change:
+                return
+            print("restoration_pending=true restore_failed=true")
+            continue
+        if confirmation == "DISCARD_ORIGINAL":
+            discarded = service.discard_original(request_id)
+            print(f"original_discarded={str(discarded).lower()}")
+            if discarded:
+                return
+            print("restoration_pending=true discard_failed=true")
+            continue
+        print("restoration_pending=true invalid_confirmation=true")
+
+
+def main() -> int:
+    return run()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
