@@ -27,6 +27,7 @@ class FakeClipboardApi:
         self.open_error: Exception | None = None
         self.read_error_at: int | None = None
         self.replace_error = False
+        self.increment_sequence_on_replace_error = False
         self.replaced_payloads: list[dict[int, bytes]] = []
 
     @contextmanager
@@ -48,6 +49,8 @@ class FakeClipboardApi:
 
     def replace_contents(self, items: dict[int, bytes]) -> None:
         if self.replace_error:
+            if self.increment_sequence_on_replace_error:
+                self.sequence += 1
             raise ClipboardAccessError("replace_failed")
         self.items = dict(items)
         self.replaced_payloads.append(dict(items))
@@ -69,6 +72,48 @@ class WindowsClipboardAdapterTests(unittest.TestCase):
 
         owner = user32.OpenClipboard.call_args.args[0]
         self.assertNotIn(owner, (None, 0))
+
+    def test_win32_partial_set_retries_with_preallocated_handles(self) -> None:
+        user32 = MagicMock()
+        kernel32 = MagicMock()
+        user32.CreateWindowExW.return_value = 1
+        user32.EmptyClipboard.return_value = True
+        user32.SetClipboardData.side_effect = [1, 0, 1, 1]
+        kernel32.GlobalAlloc.side_effect = [101, 102, 103, 104]
+        kernel32.GlobalLock.return_value = 1
+        with (
+            patch(
+                "insertion_spike.windows_clipboard.ctypes.WinDLL",
+                side_effect=(user32, kernel32),
+            ),
+            patch("insertion_spike.windows_clipboard.ctypes.memmove"),
+        ):
+            api = CtypesClipboardApi(lock_attempts=1)
+            api.replace_contents({CF_UNICODETEXT: b"text", CF_DIB: b"image"})
+
+        self.assertEqual(2, user32.EmptyClipboard.call_count)
+        self.assertEqual(4, user32.SetClipboardData.call_count)
+        kernel32.GlobalFree.assert_called_once_with(102)
+
+    def test_win32_preallocation_failure_frees_earlier_handles_before_mutation(self) -> None:
+        user32 = MagicMock()
+        kernel32 = MagicMock()
+        user32.CreateWindowExW.return_value = 1
+        kernel32.GlobalAlloc.side_effect = [101, 0]
+        kernel32.GlobalLock.return_value = 1
+        with (
+            patch(
+                "insertion_spike.windows_clipboard.ctypes.WinDLL",
+                side_effect=(user32, kernel32),
+            ),
+            patch("insertion_spike.windows_clipboard.ctypes.memmove"),
+            self.assertRaises(OSError),
+        ):
+            api = CtypesClipboardApi(lock_attempts=1)
+            api.replace_contents({CF_UNICODETEXT: b"text", CF_DIB: b"image"})
+
+        user32.EmptyClipboard.assert_not_called()
+        kernel32.GlobalFree.assert_called_once_with(101)
 
     def test_empty_and_supported_formats_round_trip(self) -> None:
         cases = (
@@ -159,6 +204,16 @@ class WindowsClipboardAdapterTests(unittest.TestCase):
         self.assertEqual({CF_UNICODETEXT: b"external"}, api.items)
         self.assertEqual([], api.replaced_payloads)
 
+    def test_discard_releases_adapter_snapshot_without_clipboard_mutation(self) -> None:
+        api = FakeClipboardApi({CF_UNICODETEXT: b"original"})
+        adapter = WindowsClipboardAdapter(api)
+        preparation = adapter.prepare()
+
+        adapter.discard(preparation.snapshot)  # type: ignore[arg-type]
+
+        self.assertIsNone(adapter._prepared_state)
+        self.assertEqual([], api.replaced_payloads)
+
     def test_restoration_failure_keeps_original_snapshot_alive(self) -> None:
         original = bytearray(CANARY_BYTES)
         api = FakeClipboardApi({CF_DIB: original})  # type: ignore[dict-item]
@@ -166,11 +221,15 @@ class WindowsClipboardAdapterTests(unittest.TestCase):
         preparation = adapter.prepare()
         adapter.commit_mutation("synthetic")
         api.replace_error = True
+        api.increment_sequence_on_replace_error = True
 
         with self.assertRaisesRegex(ClipboardAccessError, "clipboard_restore_failed"):
             adapter.restore(preparation.snapshot)  # type: ignore[arg-type]
 
         self.assertEqual(CANARY_BYTES, preparation.snapshot.state.original_items[CF_DIB])  # type: ignore[union-attr]
+        api.replace_error = False
+        retry = adapter.restore(preparation.snapshot)  # type: ignore[arg-type]
+        self.assertTrue(retry.restored)
 
 
 if __name__ == "__main__":

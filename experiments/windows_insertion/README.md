@@ -37,7 +37,7 @@ From `experiments/windows_insertion`:
 ```powershell
 python fixtures/classic_target.py
 start fixtures/password_form.html
-python fixtures/clipboard_racer.py --confirm --delay-ms 500
+python -m fixtures.clipboard_racer --confirm --delay-ms 0
 ```
 
 `classic_target.py` exposes one native `EDIT` and one native `ES_PASSWORD`
@@ -47,6 +47,8 @@ synthetic value and reports readiness/case IDs without printing the value. It
 must run during a CLI clipboard transaction: `--confirm` is mandatory, and the
 fixture refuses mutation unless the current clipboard contains exactly the
 known CLI synthetic payload (plus Windows-synthesized text formats).
+Run it from a second terminal while the CLI is waiting for explicit clipboard
+restoration; standalone or early execution fails the synthetic precondition.
 
 An elevated case is started manually from an elevated terminal. The spike
 never requests elevation or bypasses UIPI.
@@ -59,22 +61,25 @@ intentionally change focus:
 
 ```powershell
 python -m insertion_spike.cli --confirm --method auto --hold
-python -m insertion_spike.cli --confirm --method paste --paste-delay-ms 100
+python -m insertion_spike.cli --confirm --method paste --hold
 python -m insertion_spike.cli --confirm --method direct
 python -m insertion_spike.cli --confirm --dry-run
 python -m insertion_spike.cli --confirm --cancel
 ```
 
-`--paste-delay-ms` is a conservative, measurable wait before clipboard
-restoration. It does not prove that the destination consumed the paste.
-`Ctrl+V` success therefore means only `dispatched`, never confirmed insertion.
+`Ctrl+V` success means only `dispatched`, never confirmed insertion. The service
+does not restore the original clipboard on a timer: synthetic text and the
+in-memory original snapshot remain until the operator verifies target handling
+and types `RESTORE`. `Ctrl+C`/EOF cannot bypass this pending decision;
+`DISCARD_ORIGINAL` is the explicit destructive alternative. A newer external
+clipboard change is never overwritten.
 
 There remains an unavoidable TOCTOU interval between final target validation
 and processing of synthetic input by the destination application.
 
 ## Acceptance Matrix
 
-Matrix revision: `2026-07-26-1`.
+Matrix revision: `2026-07-26-2`.
 
 Environment:
 
@@ -101,7 +106,7 @@ name was printed.
 
 | Case | Layer | Result | Observed outcome |
 |---|---|---|---|
-| Contracts and boundary failures | automated, injected APIs | PASS | 49 tests passed |
+| Contracts and boundary failures | automated, injected APIs | PASS | 63 tests passed |
 | Unchanged native `EDIT` target | controlled Win32 fixture | PASS | `safe` |
 | Direct Cyrillic, emoji, newline | controlled Win32 fixture | PASS | `direct_dispatched`, content matched internally |
 | Another control in same window | controlled Win32 fixture | PASS | `target_changed` |
@@ -112,7 +117,7 @@ name was printed.
 | Text/Unicode/DIB/DIBV5/file-list round trip | automated, injected API | PASS | restored for every supported combination |
 | HTML/RTF/unknown/delayed clipboard | automated, injected API | PASS | rejected before mutation |
 | External clipboard sequence change | automated, injected API | PASS | restoration skipped, external value retained |
-| Dispatch/restoration failure | automated, injected API | PASS | result retained; original snapshot retained when needed |
+| Dispatch/restoration failure | automated, injected API | PASS | no timer restoration after queued input; original retained for explicit restoration |
 | Repeated/concurrent request | automated, injected API | PASS | `already_delivered` / `busy` |
 | CLI dry-run and cancel | automated and CLI smoke | PASS | no clipboard or keyboard access |
 | Notepad paste/direct insertion | installed application | NOT RUN | UIA protection probe unavailable; fail-closed delivery prohibited |
@@ -137,9 +142,16 @@ This does not claim inspection of arbitrary OS process dumps.
   carries only a random opaque key. Modifier wait/preflight happens before the
   final target assessment; dispatch then performs only a non-blocking modifier
   check before direct or paste input.
+- The controlled native fixture verifies actual foreground/focus before
+  capture and guards every real `SendInput` call against its own HWND/control.
 - Real clipboard access uses a private message-only owner window. The window
   is closed deterministically when CLI delivery ends; `OpenClipboard(NULL)` is
   never used for mutation/restoration.
+- All clipboard handles are allocated before `EmptyClipboard`; a partial
+  multi-format write gets one bounded retry and preserves a retryable ownership
+  marker if recovery still fails.
+- Unconfirmed synthetic-key cleanup poisons the injector and blocks every
+  subsequent dispatch in that process.
 - Real `Ctrl+V` and clipboard restoration were not exercised because the
   pre-existing clipboard included an unsupported format. Overwriting it would
   violate the spike's own safety invariant.

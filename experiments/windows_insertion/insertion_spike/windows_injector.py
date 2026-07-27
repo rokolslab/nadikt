@@ -51,8 +51,12 @@ class WindowsInputInjector:
         self._api = api
         self._modifier_wait_seconds = max(0, modifier_wait_ms) / 1000
         self._logger = logger or get_logger()
+        self._cleanup_failed = False
 
     def prepare_dispatch(self) -> bool:
+        if self._cleanup_failed:
+            self._logger.error("[FIX:synthetic-cleanup] injector_poisoned=true")
+            return False
         ready = self._wait_for_released_modifiers()
         self._logger.debug(
             "[FIX:modifier-preflight] modifiers_released=%s",
@@ -62,6 +66,9 @@ class WindowsInputInjector:
 
     def dispatch_paste(self, *, prepared: bool = False) -> DispatchResult:
         self._logger.debug("injector phase=dispatch method=paste event_count=4")
+        if self._cleanup_failed:
+            self._logger.error("[FIX:synthetic-cleanup] injector_poisoned=true")
+            return DispatchResult(False, OutcomeCode.CLEANUP_FAILED)
         if not self._ready_for_immediate_dispatch(prepared):
             self._logger.warning("injector physical_modifier=true")
             return DispatchResult(False, OutcomeCode.DISPATCH_FAILED)
@@ -79,6 +86,9 @@ class WindowsInputInjector:
             "injector phase=dispatch method=direct event_count=%d",
             len(code_units) * 2,
         )
+        if self._cleanup_failed:
+            self._logger.error("[FIX:synthetic-cleanup] injector_poisoned=true")
+            return DispatchResult(False, OutcomeCode.CLEANUP_FAILED)
         if not self._ready_for_immediate_dispatch(prepared):
             self._logger.warning("injector physical_modifier=true")
             return DispatchResult(False, OutcomeCode.DISPATCH_FAILED)
@@ -93,6 +103,9 @@ class WindowsInputInjector:
         return self._send_complete(events)
 
     def _ready_for_immediate_dispatch(self, prepared: bool) -> bool:
+        if self._cleanup_failed:
+            self._logger.error("[FIX:synthetic-cleanup] injector_poisoned=true")
+            return False
         if not prepared and not self.prepare_dispatch():
             return False
         # Do not wait here: service performs final target assessment after preflight.
@@ -107,14 +120,19 @@ class WindowsInputInjector:
         return True
 
     def _send_complete(self, events: tuple[KeyEvent, ...]) -> DispatchResult:
+        self._cleanup_failed = True
         try:
             sent = self._api.send(events)
-        except Exception as error:
+        except BaseException as error:
             self._logger.error(
                 "injector operation=send exception_type=%s",
                 type(error).__name__,
             )
-            return DispatchResult(False, OutcomeCode.DISPATCH_FAILED)
+            key_down_events = tuple(event for event in events if not event.is_key_up)
+            if self._release_synthetic_keys(key_down_events):
+                self._cleanup_failed = False
+                return DispatchResult(False, OutcomeCode.DISPATCH_FAILED)
+            return DispatchResult(False, OutcomeCode.CLEANUP_FAILED)
         if sent != len(events):
             self._logger.error(
                 "injector operation=send event_count_mismatch=true expected=%d sent=%d win32_code=%d",
@@ -122,12 +140,16 @@ class WindowsInputInjector:
                 sent,
                 self._api.last_error(),
             )
-            self._release_synthetic_keys(events[:sent])
+            cleanup_succeeded = self._release_synthetic_keys(events[:sent])
+            if not cleanup_succeeded:
+                return DispatchResult(False, OutcomeCode.CLEANUP_FAILED)
+            self._cleanup_failed = False
             return DispatchResult(False, OutcomeCode.DISPATCH_FAILED)
+        self._cleanup_failed = False
         self._logger.info("injector outcome=dispatched")
         return DispatchResult(True)
 
-    def _release_synthetic_keys(self, sent_events: tuple[KeyEvent, ...]) -> None:
+    def _release_synthetic_keys(self, sent_events: tuple[KeyEvent, ...]) -> bool:
         pressed: list[KeyEvent] = []
         for event in sent_events:
             matching = next(
@@ -153,21 +175,26 @@ class WindowsInputInjector:
             )
             for event in reversed(pressed)
         )
-        if cleanup:
-            try:
-                released = self._api.send(cleanup)
-                if released != len(cleanup):
+        cleanup_succeeded = True
+        for event in cleanup:
+            released = False
+            for _ in range(3):
+                try:
+                    if self._api.send((event,)) == 1:
+                        released = True
+                        break
+                except BaseException as error:
                     self._logger.error(
-                        "[FIX:synthetic-cleanup] event_count_mismatch=true expected=%d sent=%d win32_code=%d",
-                        len(cleanup),
-                        released,
-                        self._api.last_error(),
+                        "[FIX:synthetic-cleanup] exception_type=%s",
+                        type(error).__name__,
                     )
-            except Exception as error:
+            if not released:
+                cleanup_succeeded = False
                 self._logger.error(
-                    "[FIX:synthetic-cleanup] exception_type=%s",
-                    type(error).__name__,
+                    "[FIX:synthetic-cleanup] key_release_unconfirmed=true win32_code=%d",
+                    self._api.last_error(),
                 )
+        return cleanup_succeeded
 
     @staticmethod
     def _utf16_code_units(text: str) -> tuple[int, ...]:

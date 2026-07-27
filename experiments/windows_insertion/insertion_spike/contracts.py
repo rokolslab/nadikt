@@ -46,6 +46,7 @@ class OutcomeCode(StrEnum):
     CLIPBOARD_UNSAFE = "clipboard_unsafe"
     CLIPBOARD_FAILED = "clipboard_failed"
     DISPATCH_FAILED = "dispatch_failed"
+    CLEANUP_FAILED = "cleanup_failed"
     RESTORE_FAILED = "restore_failed"
     BOUNDARY_FAILURE = "boundary_failure"
 
@@ -139,6 +140,8 @@ class ClipboardAdapter(Protocol):
     def commit_mutation(self, text: str) -> None: ...
 
     def restore(self, snapshot: ClipboardSnapshot) -> RestoreResult: ...
+
+    def discard(self, snapshot: ClipboardSnapshot) -> None: ...
 
 
 @runtime_checkable

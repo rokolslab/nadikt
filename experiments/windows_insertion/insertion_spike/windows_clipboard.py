@@ -116,7 +116,7 @@ class WindowsClipboardAdapter:
                 finally:
                     # The clipboard is still locked, so this ownership marker cannot race.
                     self._prepared_state.mutation_sequence = self._api.sequence_number()
-        except Exception as error:
+        except BaseException as error:
             self._log_error("commit_mutation", error)
             raise ClipboardAccessError("clipboard_mutation_failed") from None
 
@@ -129,16 +129,22 @@ class WindowsClipboardAdapter:
             with self._api.opened():
                 if self._api.sequence_number() != state.mutation_sequence:
                     self._logger.warning("clipboard ownership_lost=true")
+                    self._prepared_state = None
                     return RestoreResult(False, external_change=True)
-                self._api.replace_contents(dict(state.original_items))
-        except Exception as error:
+                try:
+                    self._api.replace_contents(dict(state.original_items))
+                except BaseException:
+                    # A partial replacement is still our mutation. Preserve a
+                    # retryable ownership marker while the clipboard is locked.
+                    state.mutation_sequence = self._api.sequence_number()
+                    raise
+        except BaseException as error:
             self._log_error("restore", error)
             raise ClipboardAccessError("clipboard_restore_failed") from None
-        finally:
-            self._prepared_state = None
+        self._prepared_state = None
         return RestoreResult(True)
 
-    def _log_error(self, operation: str, error: Exception) -> None:
+    def _log_error(self, operation: str, error: BaseException) -> None:
         win32_code = getattr(error, "winerror", None)
         self._logger.error(
             "clipboard operation=%s exception_type=%s win32_code=%s",
@@ -151,6 +157,14 @@ class WindowsClipboardAdapter:
         close = getattr(self._api, "close", None)
         if callable(close):
             close()
+
+    def discard(self, snapshot: ClipboardSnapshot) -> None:
+        state = snapshot.state
+        if not isinstance(state, WindowsClipboardState):
+            raise ClipboardAccessError("clipboard_snapshot_invalid")
+        if self._prepared_state is state:
+            self._prepared_state = None
+        self._logger.warning("clipboard original_snapshot_discarded=true")
 
 
 class CtypesClipboardApi:
@@ -233,12 +247,39 @@ class CtypesClipboardApi:
             self._kernel32.GlobalUnlock(handle)
 
     def replace_contents(self, items: dict[int, bytes]) -> None:
-        if not self._user32.EmptyClipboard():
-            raise ctypes.WinError(ctypes.get_last_error())
-        for format_id, payload in items.items():
-            self._set_bytes(format_id, payload)
+        for attempt in range(2):
+            handles = self._allocate_all(items)
+            try:
+                if not self._user32.EmptyClipboard():
+                    raise ctypes.WinError(ctypes.get_last_error())
+                for format_id, handle in handles.items():
+                    if not self._user32.SetClipboardData(format_id, handle):
+                        raise ctypes.WinError(ctypes.get_last_error())
+                    handles[format_id] = None
+                return
+            except Exception:
+                for handle in handles.values():
+                    if handle:
+                        self._kernel32.GlobalFree(handle)
+                if attempt == 0:
+                    get_logger().warning(
+                        "[FIX:clipboard-recovery] partial_replace_retry=true"
+                    )
+                    continue
+                raise
 
-    def _set_bytes(self, format_id: int, payload: bytes) -> None:
+    def _allocate_all(self, items: dict[int, bytes]) -> dict[int, wintypes.HGLOBAL]:
+        handles: dict[int, wintypes.HGLOBAL] = {}
+        try:
+            for format_id, payload in items.items():
+                handles[format_id] = self._allocate_bytes(payload)
+        except Exception:
+            for handle in handles.values():
+                self._kernel32.GlobalFree(handle)
+            raise
+        return handles
+
+    def _allocate_bytes(self, payload: bytes) -> wintypes.HGLOBAL:
         handle = self._kernel32.GlobalAlloc(GMEM_MOVEABLE, len(payload))
         if not handle:
             raise ctypes.WinError(ctypes.get_last_error())
@@ -250,9 +291,7 @@ class CtypesClipboardApi:
             ctypes.memmove(pointer, payload, len(payload))
         finally:
             self._kernel32.GlobalUnlock(handle)
-        if not self._user32.SetClipboardData(format_id, handle):
-            self._kernel32.GlobalFree(handle)
-            raise ctypes.WinError(ctypes.get_last_error())
+        return handle
 
     def _configure_prototypes(self) -> None:
         self._user32.CreateWindowExW.restype = wintypes.HWND

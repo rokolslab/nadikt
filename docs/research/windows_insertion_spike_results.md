@@ -15,7 +15,7 @@
 - Windows 11 Pro x64, версия `10.0.22621`, build `22621`.
 - Python `3.12.0`.
 - Controlled fixture: native Win32 `EDIT` и `ES_PASSWORD`.
-- Automated suite: 49 unit/contract tests на injected API facades.
+- Automated suite: 63 unit/contract tests на injected API facades.
 - Установлены: Notepad `10.0.22621.3672`, Edge `150.0.4078.99`, Chrome
   `150.0.7871.125`, Firefox `147.0.2`, Word `16.0.17932.20884`.
 - 1C не найдена через Windows App Paths.
@@ -47,6 +47,15 @@
   process creation marker остаются во внутреннем store Windows adapter.
 - `Ctrl+V` outcome называется только `dispatched`; подтверждение consumption
   destination application отсутствует.
+- Timer-based restoration после queued `Ctrl+V` запрещена: synthetic clipboard
+  и original snapshot удерживаются до явного operator confirmation. При более
+  новом внешнем clipboard snapshot удаляется без перезаписи external value.
+- Multi-format restoration заранее выделяет все handles, выполняет один
+  bounded retry после partial write и сохраняет ownership marker для явного
+  повторного восстановления при второй ошибке.
+- Controlled fixture проверяет foreground/focused control и дополнительно
+  guard-ит реальный `SendInput`; неподтверждённый key cleanup блокирует
+  последующие dispatch.
 - Canary payload отсутствовал в проверенных `repr`, boundary logs, CLI
   stdout/stderr и controlled fixture diagnostics.
 

@@ -63,6 +63,7 @@ class FakeClipboard:
         self.restore_error: Exception | None = None
         self.mutated = False
         self.restore_calls = 0
+        self.discard_calls = 0
 
     def prepare(self) -> ClipboardPreparation:
         if self.prepare_error:
@@ -80,6 +81,9 @@ class FakeClipboard:
             raise self.restore_error
         return self.restore_result
 
+    def discard(self, snapshot: ClipboardSnapshot) -> None:
+        self.discard_calls += 1
+
 
 class FakeInjector:
     def __init__(self) -> None:
@@ -87,10 +91,13 @@ class FakeInjector:
         self.direct_result = DispatchResult(True)
         self.paste_error: Exception | None = None
         self.direct_error: Exception | None = None
+        self.prepare_error: BaseException | None = None
         self.direct_calls = 0
         self.paste_calls = 0
 
     def prepare_dispatch(self) -> bool:
+        if self.prepare_error:
+            raise self.prepare_error
         return True
 
     def dispatch_paste(self, *, prepared: bool = False) -> DispatchResult:
@@ -118,6 +125,18 @@ class RecordingInjector(FakeInjector):
     def dispatch_unicode(self, text: str, *, prepared: bool = False) -> DispatchResult:
         self.events.append("dispatch")
         return super().dispatch_unicode(text, prepared=prepared)
+
+
+class BlockingInjector(FakeInjector):
+    def __init__(self, entered: threading.Event, release: threading.Event) -> None:
+        super().__init__()
+        self.entered = entered
+        self.release = release
+
+    def prepare_dispatch(self) -> bool:
+        self.entered.set()
+        self.release.wait(timeout=2)
+        return True
 
 
 class BlockingTarget(FakeTarget):
@@ -148,6 +167,9 @@ class InsertionServiceTests(unittest.TestCase):
 
         self.assertEqual(OutcomeCode.DISPATCHED, outcome.code)
         self.assertTrue(outcome.retained_in_memory)
+        self.assertTrue(outcome.original_snapshot_retained)
+        self.assertEqual(0, self.clipboard.restore_calls)
+        self.assertIsNotNone(self.service.retained_snapshot("r1"))
         self.assertEqual(CANARY, self.service.retained_result("r1"))
 
     def test_changed_protected_and_elevated_targets_fail_before_mutation(self) -> None:
@@ -223,25 +245,50 @@ class InsertionServiceTests(unittest.TestCase):
         self.clipboard.restore_result = RestoreResult(False, external_change=True)
 
         outcome = self.service.deliver(self.request(), self.token)
+        restore = self.service.restore_original("r1")
 
         self.assertEqual(OutcomeCode.DISPATCHED, outcome.code)
         self.assertEqual(1, self.clipboard.restore_calls)
+        self.assertTrue(restore.external_change)
+        self.assertIsNone(self.service.retained_snapshot("r1"))
 
-    def test_dispatch_error_restores_original_and_retains_result(self) -> None:
+    def test_dispatch_error_keeps_synthetic_clipboard_and_original_snapshot(self) -> None:
         self.injector.paste_error = RuntimeError(CANARY)
 
         outcome = self.service.deliver(self.request(), self.token)
 
         self.assertEqual(OutcomeCode.DISPATCH_FAILED, outcome.code)
-        self.assertEqual(1, self.clipboard.restore_calls)
+        self.assertTrue(outcome.original_snapshot_retained)
+        self.assertEqual(0, self.clipboard.restore_calls)
+        self.assertIsNotNone(self.service.retained_snapshot("r1"))
         self.assertEqual(CANARY, self.service.retained_result("r1"))
 
     def test_restoration_error_retains_original_snapshot(self) -> None:
+        outcome = self.service.deliver(self.request(), self.token)
         self.clipboard.restore_error = RuntimeError(CANARY)
+        restore = self.service.restore_original("r1")
+
+        self.assertEqual(OutcomeCode.DISPATCHED, outcome.code)
+        self.assertFalse(restore.restored)
+        self.assertTrue(outcome.original_snapshot_retained)
+        self.assertIsNotNone(self.service.retained_snapshot("r1"))
+
+    def test_interrupt_before_input_restores_original_and_returns_cancelled(self) -> None:
+        self.injector.prepare_error = KeyboardInterrupt()
 
         outcome = self.service.deliver(self.request(), self.token)
 
-        self.assertEqual(OutcomeCode.RESTORE_FAILED, outcome.code)
+        self.assertEqual(OutcomeCode.CANCELLED, outcome.code)
+        self.assertEqual(1, self.clipboard.restore_calls)
+        self.assertIsNone(self.service.retained_snapshot("r1"))
+
+    def test_interrupt_during_input_keeps_snapshot_for_explicit_restoration(self) -> None:
+        self.injector.paste_error = KeyboardInterrupt()  # type: ignore[assignment]
+
+        outcome = self.service.deliver(self.request(), self.token)
+
+        self.assertEqual(OutcomeCode.DISPATCH_FAILED, outcome.code)
+        self.assertEqual(0, self.clipboard.restore_calls)
         self.assertTrue(outcome.original_snapshot_retained)
         self.assertIsNotNone(self.service.retained_snapshot("r1"))
 
@@ -252,6 +299,25 @@ class InsertionServiceTests(unittest.TestCase):
 
         self.assertEqual(OutcomeCode.CLIPBOARD_FAILED, outcome.code)
         self.assertEqual(1, self.clipboard.restore_calls)
+
+    def test_interrupt_during_mutation_is_converted_and_restored(self) -> None:
+        self.clipboard.commit_error = KeyboardInterrupt()  # type: ignore[assignment]
+
+        outcome = self.service.deliver(self.request(), self.token)
+
+        self.assertEqual(OutcomeCode.CLIPBOARD_FAILED, outcome.code)
+        self.assertEqual(1, self.clipboard.restore_calls)
+        self.assertIsNone(self.service.retained_snapshot("r1"))
+
+    def test_interrupt_during_explicit_restore_keeps_snapshot_pending(self) -> None:
+        outcome = self.service.deliver(self.request(), self.token)
+        self.clipboard.restore_error = KeyboardInterrupt()  # type: ignore[assignment]
+
+        restore = self.service.restore_original("r1")
+
+        self.assertEqual(OutcomeCode.DISPATCHED, outcome.code)
+        self.assertFalse(restore.restored)
+        self.assertIsNotNone(self.service.retained_snapshot("r1"))
 
     def test_cancellation_happens_before_mutation(self) -> None:
         outcome = self.service.deliver(self.request(), self.token, cancelled=True)
@@ -267,8 +333,57 @@ class InsertionServiceTests(unittest.TestCase):
 
         self.assertEqual(OutcomeCode.DISPATCHED, first.code)
         self.assertEqual(OutcomeCode.ALREADY_DELIVERED, second.code)
-        self.assertEqual(1, self.clipboard.restore_calls)
+        self.assertEqual(0, self.clipboard.restore_calls)
         self.assertEqual(CANARY, self.service.retained_result("r1"))
+
+    def test_new_request_is_busy_while_original_snapshot_is_pending(self) -> None:
+        first = self.service.deliver(self.request(request_id="first"), self.token)
+
+        second = self.service.deliver(self.request(request_id="second"), self.token)
+
+        self.assertEqual(OutcomeCode.DISPATCHED, first.code)
+        self.assertEqual(OutcomeCode.BUSY, second.code)
+        self.assertEqual(1, self.injector.paste_calls)
+
+    def test_discarding_original_releases_pending_transaction(self) -> None:
+        self.service.deliver(self.request(request_id="first"), self.token)
+
+        discarded = self.service.discard_original("first")
+        second = self.service.deliver(
+            self.request(InsertionMethod.DIRECT, "second"), self.token
+        )
+
+        self.assertTrue(discarded)
+        self.assertEqual(1, self.clipboard.discard_calls)
+        self.assertEqual(OutcomeCode.DIRECT_DISPATCHED, second.code)
+
+    def test_explicit_restore_waits_for_active_delivery_to_finish(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        injector = BlockingInjector(entered, release)
+        service = InsertionService(self.target, self.clipboard, injector)
+        delivery: list[object] = []
+        restoration: list[object] = []
+        delivery_thread = threading.Thread(
+            target=lambda: delivery.append(
+                service.deliver(self.request(), self.token)
+            )
+        )
+        delivery_thread.start()
+        self.assertTrue(entered.wait(timeout=1))
+        restore_thread = threading.Thread(
+            target=lambda: restoration.append(service.restore_original("r1"))
+        )
+        restore_thread.start()
+
+        self.assertTrue(restore_thread.is_alive())
+        release.set()
+        delivery_thread.join(timeout=2)
+        restore_thread.join(timeout=2)
+
+        self.assertEqual(1, len(delivery))
+        self.assertEqual(1, len(restoration))
+        self.assertEqual(1, self.clipboard.restore_calls)
 
     def test_concurrent_request_is_rejected_as_busy(self) -> None:
         entered = threading.Event()

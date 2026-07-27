@@ -32,6 +32,7 @@ if os.name != "nt":
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 user32.LoadCursorW.restype = wintypes.HANDLE
 user32.CreateWindowExW.restype = wintypes.HWND
 user32.CreateWindowExW.argtypes = (
@@ -55,10 +56,50 @@ user32.DefWindowProcW.argtypes = (
     wintypes.WPARAM,
     wintypes.LPARAM,
 )
+user32.SetForegroundWindow.restype = wintypes.BOOL
+user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+user32.GetWindowThreadProcessId.argtypes = (
+    wintypes.HWND,
+    ctypes.POINTER(wintypes.DWORD),
+)
+user32.AttachThreadInput.restype = wintypes.BOOL
+user32.AttachThreadInput.argtypes = (wintypes.DWORD, wintypes.DWORD, wintypes.BOOL)
+user32.BringWindowToTop.restype = wintypes.BOOL
+user32.BringWindowToTop.argtypes = (wintypes.HWND,)
+user32.GetFocus.restype = wintypes.HWND
+user32.SetFocus.restype = wintypes.HWND
 user32.SetFocus.argtypes = (wintypes.HWND,)
+user32.DestroyWindow.restype = wintypes.BOOL
 user32.DestroyWindow.argtypes = (wintypes.HWND,)
+user32.GetWindowTextLengthW.restype = ctypes.c_int
 user32.GetWindowTextLengthW.argtypes = (wintypes.HWND,)
+user32.GetWindowTextW.restype = ctypes.c_int
 user32.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+user32.ShowWindow.restype = wintypes.BOOL
+user32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+user32.UpdateWindow.restype = wintypes.BOOL
+user32.UpdateWindow.argtypes = (wintypes.HWND,)
+user32.GetMessageW.restype = wintypes.BOOL
+user32.GetMessageW.argtypes = (
+    ctypes.POINTER(wintypes.MSG),
+    wintypes.HWND,
+    wintypes.UINT,
+    wintypes.UINT,
+)
+user32.PeekMessageW.restype = wintypes.BOOL
+user32.PeekMessageW.argtypes = (
+    ctypes.POINTER(wintypes.MSG),
+    wintypes.HWND,
+    wintypes.UINT,
+    wintypes.UINT,
+    wintypes.UINT,
+)
+user32.TranslateMessage.restype = wintypes.BOOL
+user32.TranslateMessage.argtypes = (ctypes.POINTER(wintypes.MSG),)
+user32.DispatchMessageW.restype = wintypes.LPARAM
+user32.DispatchMessageW.argtypes = (ctypes.POINTER(wintypes.MSG),)
 WNDPROC = ctypes.WINFUNCTYPE(
     wintypes.LPARAM,
     wintypes.HWND,
@@ -89,6 +130,10 @@ class WNDCLASSW(ctypes.Structure):
         ("lpszMenuName", wintypes.LPCWSTR),
         ("lpszClassName", wintypes.LPCWSTR),
     ]
+
+
+user32.RegisterClassW.restype = wintypes.WORD
+user32.RegisterClassW.argtypes = (ctypes.POINTER(WNDCLASSW),)
 
 
 def create_fixture() -> tuple[wintypes.HWND, wintypes.HWND, wintypes.HWND]:
@@ -178,10 +223,31 @@ def run_self_check(
         def restore(self, snapshot):
             raise AssertionError("clipboard_not_permitted")
 
+    class GuardedInputApi:
+        def __init__(self, expected_window, expected_control):
+            self._delegate = CtypesInputApi()
+            self._expected_window = expected_window
+            self._expected_control = expected_control
+
+        def modifiers_down(self):
+            return self._delegate.modifiers_down()
+
+        def send(self, events):
+            if (
+                user32.GetForegroundWindow() != self._expected_window
+                or user32.GetFocus() != self._expected_control
+            ):
+                return 0
+            return self._delegate.send(events)
+
+        def last_error(self):
+            return self._delegate.last_error()
+
     adapter = WindowsTargetAdapter(CtypesWindowsTargetApi())
-    user32.SetForegroundWindow(window)
-    user32.SetFocus(normal)
-    sleep(0.05)
+    if not _focus_fixture_control(window, normal):
+        print("RESULT case=fixture_focus outcome=unavailable", flush=True)
+        user32.DestroyWindow(window)
+        return 1
     normal_token = adapter.capture()
     normal_result = adapter.assess(normal_token)
     print(
@@ -191,7 +257,7 @@ def run_self_check(
     service = InsertionService(
         adapter,
         UnusedClipboard(),
-        WindowsInputInjector(CtypesInputApi(), modifier_wait_ms=0),
+        WindowsInputInjector(GuardedInputApi(window, normal), modifier_wait_ms=0),
     )
     direct_outcome = service.deliver(
         InsertionRequest(
@@ -222,8 +288,10 @@ def run_self_check(
         flush=True,
     )
 
-    user32.SetFocus(password)
-    sleep(0.05)
+    if not _focus_fixture_control(window, password):
+        print("RESULT case=fixture_focus outcome=unavailable", flush=True)
+        user32.DestroyWindow(window)
+        return 1
     changed_result = adapter.assess(normal_token)
     print(f"RESULT case=changed_control outcome={changed_result.code.value}", flush=True)
 
@@ -244,7 +312,10 @@ def run_self_check(
         flush=True,
     )
 
-    user32.SetFocus(normal)
+    if not _focus_fixture_control(window, normal):
+        print("RESULT case=fixture_focus outcome=unavailable", flush=True)
+        user32.DestroyWindow(window)
+        return 1
     destroyed_token = adapter.capture()
     user32.DestroyWindow(window)
     destroyed_result = adapter.assess(destroyed_token)
@@ -262,6 +333,29 @@ def run_self_check(
         )
     )
     return 0 if passed else 1
+
+
+def _focus_fixture_control(window: wintypes.HWND, control: wintypes.HWND) -> bool:
+    foreground = user32.GetForegroundWindow()
+    foreground_thread = user32.GetWindowThreadProcessId(foreground, None)
+    current_thread = kernel32.GetCurrentThreadId()
+    attached = False
+    if foreground_thread and foreground_thread != current_thread:
+        attached = bool(
+            user32.AttachThreadInput(current_thread, foreground_thread, True)
+        )
+    try:
+        user32.BringWindowToTop(window)
+        user32.SetForegroundWindow(window)
+        user32.SetFocus(control)
+        sleep(0.05)
+        return (
+            user32.GetForegroundWindow() == window
+            and user32.GetFocus() == control
+        )
+    finally:
+        if attached:
+            user32.AttachThreadInput(current_thread, foreground_thread, False)
 
 
 def main() -> int:

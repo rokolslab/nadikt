@@ -31,6 +31,7 @@ class FakeClipboard:
     def __init__(self) -> None:
         self.commit_calls = 0
         self.close_calls = 0
+        self.restore_calls = 0
 
     def prepare(self):
         return ClipboardPreparation(True, ClipboardSnapshot("original"))
@@ -39,6 +40,7 @@ class FakeClipboard:
         self.commit_calls += 1
 
     def restore(self, snapshot):
+        self.restore_calls += 1
         return RestoreResult(True)
 
     def close(self):
@@ -65,7 +67,11 @@ class CliTests(unittest.TestCase):
     def capture_run(self, args, dependencies=None):
         stdout = io.StringIO()
         stderr = io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        with (
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+            patch("builtins.input", return_value="RESTORE"),
+        ):
             result = cli.run(args, dependencies=dependencies)
         return result, stdout.getvalue() + stderr.getvalue()
 
@@ -94,8 +100,7 @@ class CliTests(unittest.TestCase):
                 "0",
                 "--delivery-countdown",
                 "0",
-                "--paste-delay-ms",
-                "0",
+                "--hold",
             ],
             self.runtime,
         )
@@ -103,6 +108,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(0, result)
         self.assertEqual(1, self.target.capture_calls)
         self.assertEqual(1, self.clipboard.commit_calls)
+        self.assertEqual(1, self.clipboard.restore_calls)
         self.assertEqual(1, self.clipboard.close_calls)
         self.assertIn("phase=capture complete=true", output)
         self.assertIn("outcome=dispatched", output)
@@ -121,6 +127,62 @@ class CliTests(unittest.TestCase):
                 cli.create_runtime()
 
         clipboard_api.close.assert_called_once_with()
+
+    def test_keyboard_interrupt_cannot_bypass_pending_restoration(self) -> None:
+        stdout = io.StringIO()
+        with (
+            contextlib.redirect_stdout(stdout),
+            patch("builtins.input", side_effect=[KeyboardInterrupt(), "RESTORE"]),
+        ):
+            result = cli.run(
+                [
+                    "--confirm",
+                    "--method",
+                    "paste",
+                    "--capture-countdown",
+                    "0",
+                    "--delivery-countdown",
+                    "0",
+                    "--hold",
+                ],
+                dependencies=self.runtime,
+            )
+
+        self.assertEqual(0, result)
+        self.assertEqual(1, self.clipboard.restore_calls)
+        self.assertIn("input_interrupted=true", stdout.getvalue())
+
+    def test_failed_explicit_restoration_stays_pending_for_retry(self) -> None:
+        service = MagicMock()
+        service.restore_original.side_effect = [
+            RestoreResult(False),
+            RestoreResult(True),
+        ]
+        stdout = io.StringIO()
+        with (
+            contextlib.redirect_stdout(stdout),
+            patch("builtins.input", side_effect=["RESTORE", "RESTORE"]),
+        ):
+            cli._resolve_pending_restoration(service, "request")
+
+        self.assertEqual(2, service.restore_original.call_count)
+        self.assertIn("restore_failed=true", stdout.getvalue())
+
+    def test_failed_discard_stays_pending_for_retry(self) -> None:
+        service = MagicMock()
+        service.discard_original.side_effect = [False, True]
+        stdout = io.StringIO()
+        with (
+            contextlib.redirect_stdout(stdout),
+            patch(
+                "builtins.input",
+                side_effect=["DISCARD_ORIGINAL", "DISCARD_ORIGINAL"],
+            ),
+        ):
+            cli._resolve_pending_restoration(service, "request")
+
+        self.assertEqual(2, service.discard_original.call_count)
+        self.assertIn("discard_failed=true", stdout.getvalue())
 
 
 if __name__ == "__main__":

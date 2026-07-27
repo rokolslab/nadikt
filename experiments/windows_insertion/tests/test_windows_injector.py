@@ -87,20 +87,31 @@ class WindowsInputInjectorTests(unittest.TestCase):
         self.assertTrue(cleanup[0].is_key_up)
 
     def test_partial_cleanup_failure_is_logged_without_payload(self) -> None:
-        self.api.send_counts = [1, 0]
+        self.api.send_counts = [1, 0, 0, 0]
 
         with self.assertLogs("nadikt.windows_insertion_spike", level="ERROR") as captured:
             result = self.injector.dispatch_paste()
 
-        self.assertFalse(result.dispatched)
+        self.assertEqual(OutcomeCode.CLEANUP_FAILED, result.code)
         self.assertIn("[FIX:synthetic-cleanup]", "\n".join(captured.output))
+        self.assertFalse(self.injector.prepare_dispatch())
+        bypass = self.injector.dispatch_paste(prepared=True)
+        self.assertEqual(OutcomeCode.CLEANUP_FAILED, bypass.code)
 
     def test_dispatch_exception_is_safe_failure(self) -> None:
         self.api.error = RuntimeError("CANARY_injector_payload")
 
         result = self.injector.dispatch_unicode("secret")
 
-        self.assertEqual(OutcomeCode.DISPATCH_FAILED, result.code)
+        self.assertEqual(OutcomeCode.CLEANUP_FAILED, result.code)
+
+    def test_dispatch_interrupt_requires_confirmed_cleanup_or_poisons_injector(self) -> None:
+        self.api.error = KeyboardInterrupt()  # type: ignore[assignment]
+
+        result = self.injector.dispatch_paste()
+
+        self.assertEqual(OutcomeCode.CLEANUP_FAILED, result.code)
+        self.assertFalse(self.injector.prepare_dispatch())
 
     def test_protected_target_never_reaches_direct_fallback(self) -> None:
         service = InsertionService(ProtectedTarget(), NeverClipboard(), self.injector)

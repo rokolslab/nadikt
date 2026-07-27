@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from threading import Lock
-from time import monotonic, sleep
+from time import monotonic
 
 from .contracts import (
     ClipboardAdapter,
@@ -15,6 +15,7 @@ from .contracts import (
     InsertionOutcome,
     InsertionRequest,
     OutcomeCode,
+    RestoreResult,
     TargetAdapter,
     TargetToken,
     get_logger,
@@ -29,13 +30,11 @@ class InsertionService:
         target: TargetAdapter,
         clipboard: ClipboardAdapter,
         injector: InputInjector,
-        paste_restore_delay_ms: int = 0,
         logger: logging.Logger | None = None,
     ) -> None:
         self._target = target
         self._clipboard = clipboard
         self._injector = injector
-        self._paste_restore_delay_seconds = max(0, paste_restore_delay_ms) / 1000
         self._logger = logger or get_logger()
         self._delivery_lock = Lock()
         self._state_lock = Lock()
@@ -52,6 +51,42 @@ class InsertionService:
         with self._state_lock:
             return self._retained_snapshots.get(request_id)
 
+    def restore_original(self, request_id: str) -> RestoreResult:
+        with self._delivery_lock:
+            with self._state_lock:
+                snapshot = self._retained_snapshots.get(request_id)
+            if snapshot is None:
+                return RestoreResult(False)
+            self._logger.debug("insertion phase=explicit_clipboard_restore")
+            try:
+                restore = self._clipboard.restore(snapshot)
+            except BaseException as error:
+                self._log_boundary_error("clipboard", "explicit_restore", error)
+                return RestoreResult(False)
+            if restore.restored or restore.external_change:
+                with self._state_lock:
+                    self._retained_snapshots.pop(request_id, None)
+            return restore
+
+    def discard_original(self, request_id: str) -> bool:
+        with self._delivery_lock:
+            with self._state_lock:
+                snapshot = self._retained_snapshots.get(request_id)
+            if snapshot is None:
+                return False
+            try:
+                self._clipboard.discard(snapshot)
+            except BaseException as error:
+                self._log_boundary_error("clipboard", "discard", error)
+                return False
+            with self._state_lock:
+                discarded = self._retained_snapshots.pop(request_id, None) is not None
+        self._logger.warning(
+            "insertion original_snapshot_discarded=%s",
+            discarded,
+        )
+        return discarded
+
     def deliver(
         self,
         request: InsertionRequest,
@@ -61,17 +96,27 @@ class InsertionService:
     ) -> InsertionOutcome:
         started = monotonic()
         self._logger.debug("insertion phase=retain_result")
-        with self._state_lock:
-            if request.request_id in self._attempted_request_ids:
-                return self._finish(request.request_id, OutcomeCode.ALREADY_DELIVERED, started)
-            self._retained_results[request.request_id] = request.text
-            self._attempted_request_ids.add(request.request_id)
-
         if not self._delivery_lock.acquire(blocking=False):
+            with self._state_lock:
+                if request.request_id not in self._attempted_request_ids:
+                    self._retained_results[request.request_id] = request.text
+                    self._attempted_request_ids.add(request.request_id)
             self._logger.warning("insertion rejected code=%s", OutcomeCode.BUSY.value)
             return self._finish(request.request_id, OutcomeCode.BUSY, started)
 
         try:
+            with self._state_lock:
+                if request.request_id in self._attempted_request_ids:
+                    return self._finish(
+                        request.request_id,
+                        OutcomeCode.ALREADY_DELIVERED,
+                        started,
+                    )
+                self._retained_results[request.request_id] = request.text
+                self._attempted_request_ids.add(request.request_id)
+                if self._retained_snapshots:
+                    self._logger.warning("insertion rejected pending_restoration=true")
+                    return self._finish(request.request_id, OutcomeCode.BUSY, started)
             if cancelled:
                 return self._finish(request.request_id, OutcomeCode.CANCELLED, started)
 
@@ -143,7 +188,7 @@ class InsertionService:
         try:
             self._logger.debug("insertion phase=clipboard_mutation")
             self._clipboard.commit_mutation(request.text)
-        except Exception as error:
+        except BaseException as error:
             self._log_boundary_error("clipboard", "commit_mutation", error)
             return self._restore_after_dispatch(
                 request.request_id,
@@ -152,31 +197,62 @@ class InsertionService:
                 started,
             )
 
-        if not self._prepare_input_dispatch():
-            return self._restore_after_dispatch(
-                request.request_id,
-                snapshot,
-                OutcomeCode.DISPATCH_FAILED,
-                started,
+        try:
+            if not self._prepare_input_dispatch():
+                return self._restore_after_dispatch(
+                    request.request_id,
+                    snapshot,
+                    OutcomeCode.DISPATCH_FAILED,
+                    started,
+                )
+            self._logger.debug("[FIX:final-target] phase=revalidate_before_paste")
+            assessment_code = self._assess_target(captured_target)
+            if assessment_code is not None:
+                return self._restore_after_dispatch(
+                    request.request_id,
+                    snapshot,
+                    assessment_code,
+                    started,
+                )
+        except BaseException as error:
+            self._logger.error(
+                "[FIX:pre-dispatch-interrupt] exception_type=%s",
+                type(error).__name__,
             )
-        self._logger.debug("[FIX:final-target] phase=revalidate_before_paste")
-        assessment_code = self._assess_target(captured_target)
-        if assessment_code is not None:
             return self._restore_after_dispatch(
                 request.request_id,
                 snapshot,
-                assessment_code,
+                OutcomeCode.CANCELLED,
                 started,
             )
 
         self._logger.debug("insertion phase=dispatch method=paste")
-        dispatch = self._safe_dispatch(
-            lambda: self._injector.dispatch_paste(prepared=True)
-        )
+        try:
+            dispatch = self._safe_dispatch(
+                lambda: self._injector.dispatch_paste(prepared=True)
+            )
+        except BaseException as error:
+            self._logger.error(
+                "[FIX:dispatch-interrupt] exception_type=%s snapshot_retained=true",
+                type(error).__name__,
+            )
+            return self._finish(
+                request.request_id,
+                OutcomeCode.DISPATCH_FAILED,
+                started,
+                original_snapshot_retained=True,
+            )
         dispatch_code = OutcomeCode.DISPATCHED if dispatch.dispatched else (
             dispatch.code or OutcomeCode.DISPATCH_FAILED
         )
-        return self._restore_after_dispatch(request.request_id, snapshot, dispatch_code, started)
+        # Queueing Ctrl+V does not prove consumption. Keep synthetic clipboard
+        # content until the operator explicitly confirms it is safe to restore.
+        return self._finish(
+            request.request_id,
+            dispatch_code,
+            started,
+            original_snapshot_retained=True,
+        )
 
     def _prepare_input_dispatch(self) -> bool:
         self._logger.debug("[FIX:modifier-preflight] phase=before_final_target")
@@ -193,16 +269,10 @@ class InsertionService:
         dispatch_code: OutcomeCode,
         started: float,
     ) -> InsertionOutcome:
-        if dispatch_code is OutcomeCode.DISPATCHED and self._paste_restore_delay_seconds:
-            self._logger.debug(
-                "insertion phase=paste_consumption_wait duration_ms=%d",
-                int(self._paste_restore_delay_seconds * 1000),
-            )
-            sleep(self._paste_restore_delay_seconds)
         self._logger.debug("insertion phase=clipboard_restore")
         try:
             restore = self._clipboard.restore(snapshot)
-        except Exception as error:
+        except BaseException as error:
             self._log_boundary_error("clipboard", "restore", error)
             return self._finish(
                 request_id,
@@ -213,6 +283,8 @@ class InsertionService:
 
         if restore.external_change:
             self._logger.warning("insertion clipboard_external_change=true restoration_skipped=true")
+            with self._state_lock:
+                self._retained_snapshots.pop(request_id, None)
             return self._finish(request_id, dispatch_code, started)
         if not restore.restored:
             return self._finish(
@@ -233,7 +305,7 @@ class InsertionService:
             self._log_boundary_error("injector", "dispatch", error)
             return DispatchResult(False, OutcomeCode.DISPATCH_FAILED)
 
-    def _log_boundary_error(self, boundary: str, operation: str, error: Exception) -> None:
+    def _log_boundary_error(self, boundary: str, operation: str, error: BaseException) -> None:
         self._logger.error(
             "insertion boundary=%s operation=%s exception_type=%s",
             boundary,
