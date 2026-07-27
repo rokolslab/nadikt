@@ -1,3 +1,7 @@
+---
+archived: 2026-07-27
+---
+
 # План исследования: стратегия кодовой базы Nadikt
 
 Branch: feature/repository-codebase-assessment

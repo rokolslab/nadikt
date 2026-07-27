@@ -1,3 +1,7 @@
+---
+archived: 2026-07-27
+---
+
 # План реализации: Windows Insertion Safety Spike
 
 Branch: feature/windows-insertion-safety-spike
@@ -23,7 +27,7 @@ Rationale: spike проверяет наиболее рискованную ча
 
 Исследование репозиториев показало, что ни один кандидат не реализует полный контракт Nadikt: фиксацию исходного окна и control, отказ при смене цели, запрет protected fields, сохранение нескольких clipboard formats, fail-closed поведение при elevated target и восстановление результата при ошибке.
 
-Текущая среда подходит для функционального spike: Windows 11 Pro x64, Intel Core i5-12500H, 16 ГБ RAM, Python 3.12. Она не заменяет целевой Intel Core i3 для performance benchmark.
+Текущая среда подходит для функционального spike: Windows 11 Pro x64, WSL2 Ubuntu, Intel Core i3 12-го поколения, 16 ГБ RAM, Python 3.12. Она не заменяет отдельное решение о минимальной целевой hardware baseline для performance benchmark.
 
 Spike является disposable experiment. Его production code не переносится автоматически в `src/nadikt`; в основную архитектуру переходят только проверенные contracts, acceptance scenarios и отдельно перепроверенные решения.
 
