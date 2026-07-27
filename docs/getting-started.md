@@ -20,13 +20,15 @@ Nadikt находится на стадии исследования и квал
 
 | Компонент | Требование |
 |---|---|
-| ОС | Windows 10/11 x64 для real Win32 checks |
+| ОС | Windows 11 Pro host с WSL2 Ubuntu для разработки; Windows 10/11 x64 для real Win32 checks |
+| Текущая машина | Mini PC, Intel Core i3 12-го поколения, 16 ГБ ОЗУ |
 | Python | 3.12 x64 |
 | Сеть | Не нужна для tests/runtime experiment |
 | Внешние Python packages | Не нужны |
 
-Общие будущие модули должны разрабатываться и на Ubuntu, но текущий Win32
-experiment запускается только на Windows.
+Общие будущие модули разрабатываются в WSL2 Ubuntu. Win32 experiment и будущие
+проверки hotkey, target window, clipboard и insertion запускаются на Windows
+host или Windows CI, а не внутри WSL.
 
 ## Клонирование
 
