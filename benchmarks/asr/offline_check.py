@@ -35,6 +35,16 @@ def current_offline_policy() -> bool:
 def validate_local_package(package_id: str, package_path: Path, root: Path) -> OfflineCheckResult:
     """Classify local package availability without attempting network access."""
 
+    if ".." in package_path.parts or package_path.is_absolute():
+        result = OfflineCheckResult(
+            outcome="invalid_package_path",
+            network_block_required=current_offline_policy(),
+            network_attempted=False,
+            package_id=package_id,
+        )
+        LOGGER.info("offline_package_check", extra=result.safe_log_context())
+        return result
+
     resolved = root / package_path
     if not resolved.exists():
         result = OfflineCheckResult(

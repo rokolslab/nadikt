@@ -34,6 +34,46 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
         self.assertEqual(6, len(samples))
         self.assertEqual(4, len(packages))
 
+    def test_dataset_rejects_windows_absolute_labels(self) -> None:
+        dataset = load_json(ROOT / "benchmarks/asr/datasets/dataset.example.json")
+        dataset["samples"][0]["audio_label"] = "C:\\Users\\person\\audio.wav"
+        dataset["samples"][1]["reference_label"] = "\\\\server\\share\\reference.txt"
+
+        _, errors = validate_dataset_manifest(dataset)
+
+        self.assertIn("sample_0_unsafe_audio_label", errors)
+        self.assertIn("sample_1_unsafe_reference_label", errors)
+
+    def test_dataset_reports_invalid_duration_type(self) -> None:
+        dataset = load_json(ROOT / "benchmarks/asr/datasets/dataset.example.json")
+        dataset["samples"][0]["duration_seconds"] = "not-a-number"
+
+        samples, errors = validate_dataset_manifest(dataset)
+
+        self.assertIn("sample_0_invalid_duration_type", errors)
+        self.assertEqual(5, len(samples))
+
+    def test_model_inventory_rejects_unsafe_paths(self) -> None:
+        models = load_json(ROOT / "model_packs/model_inventory.example.json")
+        models["packages"][0]["package_path"] = "C:\\Users\\person\\model"
+        models["packages"][1]["package_path"] = "../outside-root/model"
+
+        _, errors = validate_model_inventory(models)
+
+        self.assertIn("package_0_unsafe_absolute_path", errors)
+        self.assertIn("package_1_unsafe_absolute_path", errors)
+
+    def test_model_inventory_reports_bad_object_types(self) -> None:
+        models = load_json(ROOT / "model_packs/model_inventory.example.json")
+        models["packages"][0]["capabilities"] = "bad"
+        models["packages"][1]["critical_files"] = "bad"
+
+        packages, errors = validate_model_inventory(models)
+
+        self.assertIn("package_0_capabilities_not_object", errors)
+        self.assertIn("package_1_critical_files_not_list", errors)
+        self.assertEqual(2, len(packages))
+
     def test_dry_run_reports_missing_packages_without_payload(self) -> None:
         summary = run_dry_run(
             ROOT / "benchmarks/asr/datasets/dataset.example.json",

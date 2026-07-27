@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
-from pathlib import Path, PurePath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
 
 from .logging_config import get_logger
@@ -22,6 +23,7 @@ REQUIRED_CATEGORIES = {
 ALLOWED_BACKENDS = {"gigaam", "faster-whisper", "tone", "other-local"}
 FORBIDDEN_SAMPLE_KEYS = {"audio_path", "transcript", "reference_text", "hypothesis", "text"}
 FORBIDDEN_MODEL_IDENTIFIERS = {"tiny", "base", "small", "medium", "large", "large-v2", "large-v3"}
+WINDOWS_DRIVE_RE = re.compile(r"^[a-zA-Z]:[\\/]")
 
 
 @dataclass(frozen=True, repr=False)
@@ -107,16 +109,20 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
             continue
 
         category = str(item["category"])
-        duration = float(item["duration_seconds"])
+        duration_value = item["duration_seconds"]
+        if not isinstance(duration_value, (int, float)):
+            errors.append(f"sample_{index}_invalid_duration_type")
+            continue
+        duration = float(duration_value)
         if category not in REQUIRED_CATEGORIES:
             errors.append(f"sample_{index}_invalid_category")
         if duration <= 0:
             errors.append(f"sample_{index}_invalid_duration")
         if category == "long_10m" and duration < 600:
             errors.append(f"sample_{index}_long_10m_too_short")
-        if _looks_like_absolute_path(str(item["audio_label"])):
+        if _is_unsafe_path_label(str(item["audio_label"])):
             errors.append(f"sample_{index}_unsafe_audio_label")
-        if _looks_like_absolute_path(str(item["reference_label"])):
+        if _is_unsafe_path_label(str(item["reference_label"])):
             errors.append(f"sample_{index}_unsafe_reference_label")
 
         terms = tuple(str(term) for term in item.get("expected_english_terms", ()))
@@ -178,15 +184,29 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
             continue
 
         backend = str(item["backend"])
-        package_path = Path(str(item["package_path"]))
+        package_path_raw = str(item["package_path"])
+        package_path = Path(package_path_raw)
+        capabilities = item["capabilities"]
+        inference_defaults = item["inference_defaults"]
+        critical_files = item["critical_files"]
         if backend not in ALLOWED_BACKENDS:
             errors.append(f"package_{index}_invalid_backend")
-        if _is_forbidden_model_identifier(str(item["package_path"])):
+        if _is_forbidden_model_identifier(package_path_raw):
             errors.append(f"package_{index}_forbidden_model_identifier")
-        if package_path.is_absolute():
+        if _is_unsafe_package_path(package_path_raw):
             errors.append(f"package_{index}_unsafe_absolute_path")
-        if not isinstance(item["critical_files"], list):
+        if not isinstance(capabilities, Mapping):
+            errors.append(f"package_{index}_capabilities_not_object")
+            continue
+        if not isinstance(inference_defaults, Mapping):
+            errors.append(f"package_{index}_inference_defaults_not_object")
+            continue
+        if not isinstance(critical_files, list):
             errors.append(f"package_{index}_critical_files_not_list")
+            continue
+        if not all(isinstance(file_item, Mapping) for file_item in critical_files):
+            errors.append(f"package_{index}_critical_file_not_object")
+            continue
 
         packages.append(
             ModelPackageManifest(
@@ -197,9 +217,9 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
                 model_revision=str(item["model_revision"]),
                 package_path=package_path,
                 license_marker=str(item["license_marker"]),
-                capabilities=dict(item["capabilities"]),
-                inference_defaults=dict(item["inference_defaults"]),
-                critical_files=tuple(dict(file_item) for file_item in item["critical_files"]),
+                capabilities=dict(capabilities),
+                inference_defaults=dict(inference_defaults),
+                critical_files=tuple(dict(file_item) for file_item in critical_files),
             )
         )
 
@@ -210,8 +230,22 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
     return packages, errors
 
 
-def _looks_like_absolute_path(value: str) -> bool:
-    return PurePath(value).is_absolute() or value.startswith("~")
+def _is_unsafe_path_label(value: str) -> bool:
+    return _is_absolute_on_any_supported_platform(value) or value.startswith("~")
+
+
+def _is_unsafe_package_path(value: str) -> bool:
+    path = PurePosixPath(value.replace("\\", "/"))
+    return _is_absolute_on_any_supported_platform(value) or ".." in path.parts
+
+
+def _is_absolute_on_any_supported_platform(value: str) -> bool:
+    return (
+        PurePosixPath(value).is_absolute()
+        or PureWindowsPath(value).is_absolute()
+        or WINDOWS_DRIVE_RE.match(value) is not None
+        or value.startswith("\\\\")
+    )
 
 
 def _is_forbidden_model_identifier(value: str) -> bool:

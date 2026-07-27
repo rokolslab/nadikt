@@ -30,9 +30,10 @@ def run_dry_run(dataset_path: Path, models_path: Path) -> dict[str, Any]:
             result = validate_local_package(package.package_id, package.package_path, models_path.parent)
             outcomes[result.outcome] += 1
 
+    created_at = datetime.now(UTC)
     summary = {
-        "run_id": "dry-run-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"),
-        "created_at": datetime.now(UTC).isoformat(),
+        "run_id": "dry-run-" + created_at.strftime("%Y%m%dT%H%M%SZ"),
+        "created_at": created_at.isoformat(),
         "dataset": {
             "dataset_id": dataset_data.get("dataset_id"),
             "dataset_revision": dataset_data.get("dataset_revision"),
