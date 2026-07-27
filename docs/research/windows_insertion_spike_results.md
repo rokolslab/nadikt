@@ -11,8 +11,9 @@
 
 ## Среда
 
-- Дата: 2026-07-26.
-- Tested code revision: `55a13ad`.
+- Дата выполнения controlled checks: 2026-07-26.
+- Дата обновления merged matrix: 2026-07-27.
+- Merged baseline revision: `5ee5726`.
 - Windows 11 Pro x64, версия `10.0.22621`, build `22621`.
 - Python `3.12.0`.
 - Controlled fixture: native Win32 `EDIT` и `ES_PASSWORD`.

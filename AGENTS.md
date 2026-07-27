@@ -31,11 +31,15 @@ nadikt/
 |   |-- ROADMAP.md                      # стратегические milestones проекта
 |   |-- plans/                          # долгоживущие планы feature-веток
 |   `-- rules/base.md                   # базовые инженерные правила
+|-- .github/                            # issue forms и pull request template
 |-- .opencode/
 |   `-- skills/
 |       |-- aif*/                       # встроенные проектные AI Factory навыки
 |       `-- nadikt-offline-asr/         # проектный навык интеграции и benchmark ASR
 |-- docs/
+|   |-- README.md                       # публичный индекс документации
+|   |-- getting-started.md              # текущее окружение и первые команды
+|   |-- testing.md                      # test strategy и команды experiment
 |   |-- architecture/                   # согласованная стратегия разработки
 |   |-- requirements/                   # техническое задание и ASR-требования
 |   `-- research/                       # анализ аналогов
@@ -43,6 +47,10 @@ nadikt/
 |   `-- windows_insertion/              # disposable spike target/clipboard/input safety
 |-- .ai-factory.json                    # метаданные установки AI Factory
 |-- AGENTS.md                           # карта проекта для агентов
+|-- CONTRIBUTING.md                     # правила contribution и pull requests
+|-- LICENSE                             # MIT License
+|-- README.md                           # публичная landing page проекта
+|-- SECURITY.md                         # private vulnerability reporting
 |-- opencode.json                       # проектная конфигурация OpenCode и MCP
 `-- skills-lock.json                    # lock-файл внешних навыков
 ```
@@ -51,13 +59,8 @@ nadikt/
 
 | Файл | Назначение |
 |---|---|
-| `docs/requirements/Nadikt_TZ_v0.2.md` | Основное согласованное техническое задание Windows MVP. |
-| `docs/requirements/Nadikt_multilingual_ASR_requirements.md` | Требования к смешанной речи, движкам и модельным пакетам. |
-| `docs/architecture/Nadikt_development_strategy.md` | Стратегия общего ядра, раннего Windows-прототипа и последующей Ubuntu-версии. |
-| `docs/architecture/ADR-001-codebase-strategy.md` | Решение HYBRID по собственной кодовой базе и выборочному использованию сторонних решений. |
-| `docs/research/repository_assessment.md` | Технический и лицензионный анализ открытых приложений голосового ввода. |
-| `docs/research/handy_poc_plan.md` | Ограниченный план проверки Handy на Ubuntu и Windows. |
-| `docs/research/windows_insertion_spike_results.md` | Результаты Windows insertion spike и решение REWORK. |
+| `README.md` | Публичный обзор, статус, quick start и навигация. |
+| `docs/README.md` | Полный индекс требований, архитектуры, исследований и руководств. |
 | `experiments/windows_insertion/README.md` | Команды, safety rules и versioned acceptance matrix disposable spike. |
 | `experiments/windows_insertion/insertion_spike/cli.py` | Ручной двухэтапный capture/deliver harness; не является точкой входа приложения. |
 | `.ai-factory/DESCRIPTION.md` | Краткий контекст продукта, выбранный стек и открытые технические решения. |
@@ -74,6 +77,10 @@ nadikt/
 
 | Документ | Путь | Описание |
 |---|---|---|
+| README | `README.md` | Публичная landing page проекта. |
+| Центр документации | `docs/README.md` | Индекс всех публичных материалов. |
+| Начало работы | `docs/getting-started.md` | Окружение, clone и первые проверки. |
+| Тестирование | `docs/testing.md` | Automated tests и controlled fixtures. |
 | Техническое задание | `docs/requirements/Nadikt_TZ_v0.2.md` | Функциональные, нефункциональные и приёмочные требования MVP. |
 | Требования к ASR | `docs/requirements/Nadikt_multilingual_ASR_requirements.md` | Смешанная русско-английская речь и сменные движки. |
 | Стратегия разработки | `docs/architecture/Nadikt_development_strategy.md` | Этапы Ubuntu core, Windows prototype, Windows MVP и Ubuntu version. |
@@ -82,9 +89,10 @@ nadikt/
 | ADR стратегии кодовой базы | `docs/architecture/ADR-001-codebase-strategy.md` | Принятое решение HYBRID и условия пересмотра. |
 | Handy PoC | `docs/research/handy_poc_plan.md` | Измеримый план проверки оставшихся рисков Handy. |
 | Windows insertion spike | `docs/research/windows_insertion_spike_results.md` | Проверенные факты, ограничения, production ports и решение REWORK. |
+| Участие | `CONTRIBUTING.md` | Workflow и pull request checklist. |
+| Безопасность | `SECURITY.md` | Private vulnerability reporting. |
+| Лицензия | `LICENSE` | MIT License для собственного кода и документации. |
 | Roadmap | `.ai-factory/ROADMAP.md` | Milestones исследования, прототипов, Windows MVP и Ubuntu-версии. |
-
-README пока отсутствует.
 
 ## Контекст AI
 

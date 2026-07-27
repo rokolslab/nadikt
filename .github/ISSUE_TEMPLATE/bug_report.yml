@@ -1,0 +1,52 @@
+name: Bug report
+description: Сообщить о воспроизводимой ошибке без sensitive data
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Не публикуйте аудио, transcript, clipboard payload, credentials, window titles или пользовательские данные. Для уязвимостей используйте Security Advisory.
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Commit SHA, branch или release
+      placeholder: 5ee5726
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: ОС, Python, CPU и релевантные версии
+      placeholder: Windows 11 x64, Python 3.12
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps To Reproduce
+      description: Используйте только synthetic data
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy Check
+      options:
+        - label: В сообщении нет sensitive или пользовательских данных
+          required: true
