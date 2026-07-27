@@ -1,0 +1,47 @@
+name: Feature request
+description: Предложить функцию или изменение требований
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Какую пользовательскую или инженерную проблему нужно решить?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Опишите observable behavior, а не только выбранную библиотеку
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Какие варианты или ограничения уже рассмотрены?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - ASR / models
+        - Audio / VAD / segmentation
+        - Text processing / dictionary
+        - Windows integration
+        - Desktop UI
+        - Packaging / model packages
+        - Ubuntu adapter
+        - Documentation
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope Check
+      options:
+        - label: Предложение сохраняет offline/privacy требования или явно объясняет конфликт
+          required: true

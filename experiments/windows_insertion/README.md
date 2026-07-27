@@ -79,8 +79,8 @@ and processing of synthetic input by the destination application.
 
 ## Acceptance Matrix
 
-Matrix revision: `2026-07-26-2`.
-Tested code revision: `55a13ad` (`fix(windows): serialize insertion transaction lifecycle`).
+Matrix revision: `2026-07-27-1`.
+Merged baseline revision: `5ee5726` (`feat(windows): qualify insertion safety spike`).
 
 Environment:
 

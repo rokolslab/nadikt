@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/rokolslab/nadikt/security/advisories/new
+    about: Сообщить об уязвимости приватно
+  - name: Documentation
+    url: https://github.com/rokolslab/nadikt/blob/main/docs/README.md
+    about: Найти требования, архитектуру и руководства
