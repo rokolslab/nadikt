@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "manifest_kind": "example",
+  "inventory_id": "nadikt-local-asr-packages-example",
+  "packages": [
+    {
+      "package_id": "gigaam-v3-e2e-ctc-local",
+      "candidate_id": "gigaam-v3-e2e-ctc",
+      "backend": "gigaam",
+      "model_name": "GigaAM v3 e2e CTC",
+      "model_revision": "example-revision",
+      "package_path": "local-packages/gigaam-v3-e2e-ctc",
+      "license_marker": "TO_BE_VERIFIED",
+      "compatible_nadikt_versions": ["0.x-prototype"],
+      "capabilities": {
+        "languages": ["ru"],
+        "punctuation": true,
+        "max_segment_seconds": 25.0,
+        "streaming": false
+      },
+      "inference_defaults": {
+        "device": "cpu",
+        "precision": "backend-default",
+        "beam_size": null,
+        "cpu_threads": "auto"
+      },
+      "critical_files": [
+        {"relative_path": "manifest.json", "sha256": "example-not-a-real-checksum"}
+      ]
+    },
+    {
+      "package_id": "gigaam-v3-e2e-rnnt-local",
+      "candidate_id": "gigaam-v3-e2e-rnnt",
+      "backend": "gigaam",
+      "model_name": "GigaAM v3 e2e RNN-T",
+      "model_revision": "example-revision",
+      "package_path": "local-packages/gigaam-v3-e2e-rnnt",
+      "license_marker": "TO_BE_VERIFIED",
+      "compatible_nadikt_versions": ["0.x-prototype"],
+      "capabilities": {
+        "languages": ["ru"],
+        "punctuation": true,
+        "max_segment_seconds": 25.0,
+        "streaming": false
+      },
+      "inference_defaults": {
+        "device": "cpu",
+        "precision": "backend-default",
+        "beam_size": null,
+        "cpu_threads": "auto"
+      },
+      "critical_files": [
+        {"relative_path": "manifest.json", "sha256": "example-not-a-real-checksum"}
+      ]
+    },
+    {
+      "package_id": "gigaam-multilingual-220m-local",
+      "candidate_id": "gigaam-multilingual-220m",
+      "backend": "gigaam",
+      "model_name": "GigaAM Multilingual 220M",
+      "model_revision": "example-revision",
+      "package_path": "local-packages/gigaam-multilingual-220m",
+      "license_marker": "TO_BE_VERIFIED",
+      "compatible_nadikt_versions": ["0.x-prototype"],
+      "capabilities": {
+        "languages": ["ru", "en"],
+        "punctuation": true,
+        "max_segment_seconds": 25.0,
+        "streaming": false
+      },
+      "inference_defaults": {
+        "device": "cpu",
+        "precision": "backend-default",
+        "beam_size": null,
+        "cpu_threads": "auto"
+      },
+      "critical_files": [
+        {"relative_path": "manifest.json", "sha256": "example-not-a-real-checksum"}
+      ]
+    },
+    {
+      "package_id": "faster-whisper-small-int8-local",
+      "candidate_id": "faster-whisper-small-int8",
+      "backend": "faster-whisper",
+      "model_name": "Whisper small CTranslate2 INT8",
+      "model_revision": "example-revision",
+      "package_path": "local-packages/faster-whisper-small-int8",
+      "license_marker": "TO_BE_VERIFIED",
+      "compatible_nadikt_versions": ["0.x-prototype"],
+      "capabilities": {
+        "languages": ["ru", "en"],
+        "punctuation": true,
+        "max_segment_seconds": 30.0,
+        "streaming": false
+      },
+      "inference_defaults": {
+        "device": "cpu",
+        "compute_type": "int8",
+        "beam_size": 5,
+        "cpu_threads": "auto",
+        "vad_filter": false
+      },
+      "critical_files": [
+        {"relative_path": "model.bin", "sha256": "example-not-a-real-checksum"}
+      ]
+    }
+  ]
+}

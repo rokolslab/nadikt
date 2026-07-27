@@ -4,7 +4,7 @@
 
 ## Обзор проекта
 
-Nadikt - автономная утилита голосового ввода для Windows 10/11 с локальным ASR, безопасной вставкой текста и будущим переносом общего ядра на Ubuntu. Исходный код приложения ещё не создан; в репозитории есть только изолированный disposable experiment безопасной Windows-вставки.
+Nadikt - автономная утилита голосового ввода для Windows 10/11 с локальным ASR, безопасной вставкой текста и будущим переносом общего ядра на Ubuntu. Законченное приложение ещё не создано; в репозитории есть начальный ASR contract/benchmark skeleton и изолированный disposable experiment безопасной Windows-вставки.
 
 Подробное описание проекта находится в `.ai-factory/DESCRIPTION.md`, канонические продуктовые требования - в `docs/`.
 
@@ -45,6 +45,13 @@ nadikt/
 |   `-- research/                       # анализ аналогов
 |-- experiments/
 |   `-- windows_insertion/              # disposable spike target/clipboard/input safety
+|-- src/
+|   `-- nadikt/domain/ports/asr.py       # начальный ASR contract skeleton общего ядра
+|-- benchmarks/
+|   `-- asr/                             # manifest validation, dry-run и benchmark helpers
+|-- model_packs/                         # docs и example manifests; без model weights
+|-- tests/
+|   `-- contract/                        # contract tests для ASR benchmark harness
 |-- .ai-factory.json                    # метаданные установки AI Factory
 |-- AGENTS.md                           # карта проекта для агентов
 |-- CONTRIBUTING.md                     # правила contribution и pull requests
@@ -61,6 +68,10 @@ nadikt/
 |---|---|
 | `README.md` | Публичный обзор, статус, quick start и навигация. |
 | `docs/README.md` | Полный индекс требований, архитектуры, исследований и руководств. |
+| `docs/research/local_asr_performance_benchmark_plan.md` | Protocol локального ASR benchmark, метрики, offline/privacy gates и dry-run command. |
+| `docs/research/local_asr_performance_benchmark_results.md` | Шаблон результатов benchmark и decision matrix без выбора модели до измерений. |
+| `src/nadikt/domain/ports/asr.py` | Начальный SDK-neutral ASR contract общего ядра. |
+| `benchmarks/asr/dry_run.py` | Dry-run manifest validator без загрузки моделей и без сетевых вызовов. |
 | `experiments/windows_insertion/README.md` | Команды, safety rules и versioned acceptance matrix disposable spike. |
 | `experiments/windows_insertion/insertion_spike/cli.py` | Ручной двухэтапный capture/deliver harness; не является точкой входа приложения. |
 | `.ai-factory/DESCRIPTION.md` | Краткий контекст продукта, выбранный стек и открытые технические решения. |
@@ -71,7 +82,7 @@ nadikt/
 | `.opencode/skills/nadikt-offline-asr/SKILL.md` | Правила автономной интеграции GigaAM/faster-whisper и benchmark. |
 | `opencode.json` | GitHub MCP для OpenCode; ожидает `GITHUB_TOKEN` в окружении. |
 
-Точка входа приложения отсутствует. `experiments/windows_insertion/insertion_spike/cli.py` запускает только disposable experiment и не переносится автоматически в production.
+Точка входа приложения отсутствует. `benchmarks/asr/dry_run.py` запускает только benchmark dry run. `experiments/windows_insertion/insertion_spike/cli.py` запускает только disposable experiment и не переносится автоматически в production.
 
 ## Документация
 
@@ -89,6 +100,8 @@ nadikt/
 | ADR стратегии кодовой базы | `docs/architecture/ADR-001-codebase-strategy.md` | Принятое решение HYBRID и условия пересмотра. |
 | Handy PoC | `docs/research/handy_poc_plan.md` | Измеримый план проверки оставшихся рисков Handy. |
 | Windows insertion spike | `docs/research/windows_insertion_spike_results.md` | Проверенные факты, ограничения, production ports и решение REWORK. |
+| Local ASR benchmark plan | `docs/research/local_asr_performance_benchmark_plan.md` | Protocol, manifests, offline/privacy gates и dry-run command. |
+| Local ASR benchmark results | `docs/research/local_asr_performance_benchmark_results.md` | Шаблон результатов и decision matrix. |
 | Участие | `CONTRIBUTING.md` | Workflow и pull request checklist. |
 | Безопасность | `SECURITY.md` | Private vulnerability reporting. |
 | Лицензия | `LICENSE` | MIT License для собственного кода и документации. |

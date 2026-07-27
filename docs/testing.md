@@ -4,8 +4,18 @@
 
 ## Текущий Test Suite
 
-Production test suite ещё не создан. Единственный исполняемый набор относится
-к disposable Windows insertion spike и использует стандартный `unittest`.
+Production test suite только начинает появляться. Сейчас есть contract tests
+для локального ASR benchmark harness и отдельный исполняемый набор disposable
+Windows insertion spike; оба используют стандартный `unittest`.
+
+```powershell
+python3 -m unittest discover -s tests
+```
+
+Команда проверяет manifest validation, dry-run, privacy audit, quality metrics
+и ASR contract redaction без реальных моделей и без пользовательских payload.
+
+Disposable Windows insertion spike запускается отдельно:
 
 ```powershell
 cd experiments/windows_insertion
@@ -24,6 +34,7 @@ python -m unittest discover -s tests
 | Clipboard adapter | Formats, ownership sequence, partial writes, recovery |
 | Input adapter | UTF-16, modifiers, partial `SendInput`, poisoned cleanup |
 | CLI/fixtures | Dry-run, confirmation gates, controlled synthetic input |
+| ASR benchmark | Manifest validation, missing package outcomes, privacy-safe dry-run, metric helpers |
 
 ## Compile Check
 
@@ -51,6 +62,21 @@ Tests и diagnostics не должны содержать:
 
 Вместо этого разрешены case IDs, capability flags, outcome codes, durations и
 aggregate event/format counts.
+
+## ASR Benchmark Dry Run
+
+```powershell
+python3 -m benchmarks.asr.dry_run --dataset benchmarks/asr/datasets/dataset.example.json --models model_packs/model_inventory.example.json
+```
+
+Ожидаемый результат: deterministic `missing_package` outcomes для example
+packages, `network_attempted=false`, отсутствие transcript/audio payload в JSON
+summary.
+
+Для controlled offline acceptance можно выставить
+`NADIKT_BENCHMARK_OFFLINE_REQUIRED=1`. Эта переменная только фиксирует требование
+в dry-run summary; фактическая блокировка исходящей сети выполняется внешними
+средствами ОС или изолированной среды.
 
 ## Manual Matrix
 

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "manifest_kind": "example",
+  "dataset_id": "nadikt-local-asr-benchmark-example",
+  "dataset_revision": "example-2026-07-27",
+  "storage_policy": "Raw audio and reference transcripts are stored outside Git in controlled storage.",
+  "samples": [
+    {
+      "sample_id": "ru_short_001",
+      "category": "ru_short",
+      "duration_seconds": 12.4,
+      "language_profile": "ru",
+      "audio_label": "controlled-audio:ru_short_001",
+      "reference_label": "controlled-reference:ru_short_001",
+      "expected_english_terms": [],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Synthetic or anonymized office phrase. No transcript in Git."
+    },
+    {
+      "sample_id": "ru_en_terms_001",
+      "category": "ru_en_terms",
+      "duration_seconds": 18.2,
+      "language_profile": "ru_en",
+      "audio_label": "controlled-audio:ru_en_terms_001",
+      "reference_label": "controlled-reference:ru_en_terms_001",
+      "expected_english_terms": ["Windows", "PostgreSQL", "GitHub"],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Controlled phrase from public requirements examples; no full transcript in manifest."
+    },
+    {
+      "sample_id": "names_abbrev_numbers_001",
+      "category": "names_abbrev_numbers",
+      "duration_seconds": 15.8,
+      "language_profile": "ru",
+      "audio_label": "controlled-audio:names_abbrev_numbers_001",
+      "reference_label": "controlled-reference:names_abbrev_numbers_001",
+      "expected_english_terms": [],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Synthetic names and numbers only."
+    },
+    {
+      "sample_id": "pauses_noise_001",
+      "category": "pauses_noise",
+      "duration_seconds": 42.0,
+      "language_profile": "ru",
+      "audio_label": "controlled-audio:pauses_noise_001",
+      "reference_label": "controlled-reference:pauses_noise_001",
+      "expected_english_terms": [],
+      "segmentation_policy_id": "seg-25s-overlap-250ms-v1",
+      "notes": "Moderate office noise fixture label; no audio in Git."
+    },
+    {
+      "sample_id": "long_10m_001",
+      "category": "long_10m",
+      "duration_seconds": 600.0,
+      "language_profile": "ru",
+      "audio_label": "controlled-audio:long_10m_001",
+      "reference_label": "controlled-reference:long_10m_001",
+      "expected_english_terms": [],
+      "segmentation_policy_id": "seg-25s-overlap-250ms-v1",
+      "notes": "Long dictation controlled-storage label."
+    },
+    {
+      "sample_id": "boundary_cases_001",
+      "category": "boundary_cases",
+      "duration_seconds": 35.0,
+      "language_profile": "ru_en",
+      "audio_label": "controlled-audio:boundary_cases_001",
+      "reference_label": "controlled-reference:boundary_cases_001",
+      "expected_english_terms": ["Excel"],
+      "segmentation_policy_id": "seg-25s-overlap-250ms-v1",
+      "notes": "Boundary comparison fixture label."
+    }
+  ]
+}

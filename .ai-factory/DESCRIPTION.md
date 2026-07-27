@@ -59,6 +59,12 @@ Nadikt - автономная фоновая утилита голосового
 - **Совместимость:** обязательная проверка включает Блокнот, Microsoft Word, браузерные поля и 1С.
 - **Поставка:** конечному пользователю не нужны Python, Node.js, Rust, среда разработки или командная строка.
 
+## Текущие артефакты реализации
+
+- Начальный SDK-neutral ASR contract находится в `src/nadikt/domain/ports/asr.py`.
+- Локальный ASR benchmark protocol, manifests, dry-run и results template находятся в `docs/research/local_asr_performance_benchmark_plan.md`, `benchmarks/asr/`, `model_packs/` и `docs/research/local_asr_performance_benchmark_results.md`.
+- Benchmark dry run не загружает модели, не выполняет сетевые вызовы и проверяет только manifests/safe failure outcomes.
+
 ## Контрольные решения прототипа
 
 - Выбрать CTC или RNN-T вариант GigaAM-v3-e2e для русского режима.

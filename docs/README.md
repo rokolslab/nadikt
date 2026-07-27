@@ -47,6 +47,8 @@
 | [Оценка репозиториев](research/repository_assessment.md) | Лицензии, reuse и fork gate |
 | [Handy PoC plan](research/handy_poc_plan.md) | Ограниченный план дополнительной проверки |
 | [Windows insertion spike](research/windows_insertion_spike_results.md) | `REWORK`, evidence и deferred matrix |
+| [Local ASR benchmark plan](research/local_asr_performance_benchmark_plan.md) | Protocol, manifests, offline/privacy gates и dry-run command |
+| [Local ASR benchmark results](research/local_asr_performance_benchmark_results.md) | Шаблон результатов и decision matrix |
 
 ## Иерархия Источников
 
