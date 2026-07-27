@@ -20,12 +20,14 @@
       },
       "inference_defaults": {
         "device": "cpu",
+        "gigaam_model_name": "v3_e2e_ctc",
         "precision": "backend-default",
         "beam_size": null,
         "cpu_threads": "auto"
       },
       "critical_files": [
-        {"relative_path": "manifest.json", "sha256": "example-not-a-real-checksum"}
+        {"relative_path": "v3_e2e_ctc.ckpt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+        {"relative_path": "v3_e2e_ctc_tokenizer.model", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}
       ]
     },
     {
@@ -45,12 +47,14 @@
       },
       "inference_defaults": {
         "device": "cpu",
+        "gigaam_model_name": "v3_e2e_rnnt",
         "precision": "backend-default",
         "beam_size": null,
         "cpu_threads": "auto"
       },
       "critical_files": [
-        {"relative_path": "manifest.json", "sha256": "example-not-a-real-checksum"}
+        {"relative_path": "v3_e2e_rnnt.ckpt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
+        {"relative_path": "v3_e2e_rnnt_tokenizer.model", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}
       ]
     },
     {
@@ -70,12 +74,13 @@
       },
       "inference_defaults": {
         "device": "cpu",
+        "gigaam_model_name": "multilingual_ctc",
         "precision": "backend-default",
         "beam_size": null,
         "cpu_threads": "auto"
       },
       "critical_files": [
-        {"relative_path": "manifest.json", "sha256": "example-not-a-real-checksum"}
+        {"relative_path": "multilingual_ctc.ckpt", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}
       ]
     },
     {
@@ -101,7 +106,7 @@
         "vad_filter": false
       },
       "critical_files": [
-        {"relative_path": "model.bin", "sha256": "example-not-a-real-checksum"}
+        {"relative_path": "model.bin", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}
       ]
     }
   ]

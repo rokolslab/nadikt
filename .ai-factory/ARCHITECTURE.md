@@ -67,7 +67,8 @@ docs/
 На 2026-07-27 создана первая минимальная часть целевой структуры для ASR benchmark:
 
 - `src/nadikt/domain/ports/asr.py` - SDK-neutral контракт ASR engine lifecycle, metadata, capabilities и segment transcript result.
-- `benchmarks/asr/` - standard-library helpers для dataset/model manifests, dry-run, resource timing, segmentation validation, offline package checks, privacy audit и quality metrics.
+- `src/nadikt/infrastructure/asr/` - optional SDK-backed ASR probe adapters для GigaAM/faster-whisper с lazy imports; fake-backed на текущем этапе, не composition root.
+- `benchmarks/asr/` - standard-library helpers для dataset/model manifests, dry-run, local package probe runner, resource timing, segmentation validation, package integrity, privacy audit и quality metrics.
 - `model_packs/` - documentation и example inventory manifests без model weights.
 - `tests/contract/` - contract tests для benchmark harness без реальных моделей.
 

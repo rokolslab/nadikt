@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
+from typing import Mapping
 
 from .logging_config import get_logger
+from .package_integrity import validate_package_integrity
 LOGGER = get_logger(__name__)
 
 
@@ -16,6 +18,8 @@ class OfflineCheckResult:
     network_block_required: bool
     network_attempted: bool
     package_id: str | None = None
+    checksum_prefixes: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
     def safe_log_context(self) -> dict[str, object]:
         return {
@@ -23,6 +27,8 @@ class OfflineCheckResult:
             "network_block_required": self.network_block_required,
             "network_attempted": self.network_attempted,
             "package_id": self.package_id,
+            "checksum_prefixes": list(self.checksum_prefixes),
+            "warnings": list(self.warnings),
         }
 
 
@@ -32,46 +38,30 @@ def current_offline_policy() -> bool:
     return os.environ.get("NADIKT_BENCHMARK_OFFLINE_REQUIRED", "0") == "1"
 
 
-def validate_local_package(package_id: str, package_path: Path, root: Path) -> OfflineCheckResult:
+def validate_local_package(
+    package_id: str,
+    package_path: Path,
+    root: Path,
+    critical_files: tuple[Mapping[str, str], ...] = (),
+    license_marker: str = "",
+) -> OfflineCheckResult:
     """Classify local package availability without attempting network access."""
 
-    if _is_unsafe_package_path(str(package_path)):
-        result = OfflineCheckResult(
-            outcome="invalid_package_path",
-            network_block_required=current_offline_policy(),
-            network_attempted=False,
-            package_id=package_id,
-        )
-        LOGGER.info("offline_package_check", extra=result.safe_log_context())
-        return result
-
-    resolved = root / package_path
-    if not resolved.exists():
-        result = OfflineCheckResult(
-            outcome="missing_package",
-            network_block_required=current_offline_policy(),
-            network_attempted=False,
-            package_id=package_id,
-        )
-        LOGGER.info("offline_package_check", extra=result.safe_log_context())
-        return result
-
+    LOGGER.debug("offline_package_check_start", extra={"package_id": package_id})
+    integrity = validate_package_integrity(
+        package_id=package_id,
+        package_path=package_path,
+        inventory_root=root,
+        critical_files=critical_files,
+        license_marker=license_marker,
+    )
     result = OfflineCheckResult(
-        outcome="package_present",
+        outcome=integrity.outcome,
         network_block_required=current_offline_policy(),
         network_attempted=False,
         package_id=package_id,
+        checksum_prefixes=integrity.checksum_prefixes,
+        warnings=integrity.warnings,
     )
     LOGGER.info("offline_package_check", extra=result.safe_log_context())
     return result
-
-
-def _is_unsafe_package_path(value: str) -> bool:
-    normalized = value.replace("\\", "/")
-    posix_path = PurePosixPath(normalized)
-    return (
-        ".." in posix_path.parts
-        or PurePosixPath(value).is_absolute()
-        or PureWindowsPath(value).is_absolute()
-        or value.startswith("\\\\")
-    )

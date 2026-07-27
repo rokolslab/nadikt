@@ -1,6 +1,6 @@
 # Model Package Inventory
 
-Этот каталог хранит только documentation и example manifests для локальных ASR model packages. Model weights, tokenizer files, checkpoints и vendor artifacts не добавляются в Git.
+Этот каталог хранит только documentation и example manifests для локальных ASR model packages. Model weights, tokenizer files, checkpoints и vendor artifacts не добавляются в Git. Для локальных экспериментов используйте ignored paths вроде `local-packages/` или controlled storage вне репозитория.
 
 ## Package Rules
 
@@ -9,6 +9,7 @@
 - Missing package, checksum mismatch и incompatible backend фиксируются отдельными safe outcome codes.
 - Абсолютные пользовательские paths не печатаются в logs; используйте `package_id` и checksum prefix.
 - License и third-party component notices обязательны до включения package в поставку.
+- `.gitignore` запрещает типовые weights/tokenizer/checkpoint файлы и Hub caches; committed files здесь должны оставаться metadata-only.
 
 ## JSON Format
 
@@ -39,7 +40,7 @@
         "cpu_threads": "auto"
       },
       "critical_files": [
-        {"relative_path": "model.bin", "sha256": "example-not-a-real-checksum"}
+        {"relative_path": "model.bin", "sha256": "0000000000000000000000000000000000000000000000000000000000000000"}
       ]
     }
   ]
@@ -75,9 +76,16 @@
 | `incompatible_backend` | Backend/package does not match runner contract |
 | `license_not_verified` | Package cannot advance to MVP packaging gate |
 
+## Local Payload Policy
+
+- Не храните real model packages, Hub caches, raw audio, reference transcripts или generated probe outputs в Git.
+- Разрешены только example manifests, documentation и tiny synthetic text fixtures, которые не похожи на реальные model weights.
+- Для проверки ignore policy используйте synthetic paths under ignored directories, например `local-packages/<package-id>/` и `benchmarks/asr/runs/<run-id>/`.
+- Reports и logs должны ссылаться на `package_id`, `candidate_id`, backend, phase/outcome codes и checksum prefixes, но не на абсолютные локальные пути.
+
 ## Candidate Notes
 
 - GigaAM `.transcribe` is limited to short audio; long dictation must go through Nadikt segmentation.
-- GigaAM local loading API must be confirmed by offline prototype before production adapter work.
+- GigaAM package layout follows SDK cache-style loading: critical files must include the expected `<gigaam_model_name>.ckpt` and, for `e2e`/`v1_rnnt` models, `<gigaam_model_name>_tokenizer.model`; the adapter passes `download_root` only after package validation.
 - faster-whisper receives a local CTranslate2 directory, not `small` or a Hugging Face repository name.
 - T-one stays optional until local package lifecycle and redistribution terms are proven.

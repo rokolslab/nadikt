@@ -47,7 +47,9 @@ nadikt/
 |-- experiments/
 |   `-- windows_insertion/              # disposable spike target/clipboard/input safety
 |-- src/
-|   `-- nadikt/domain/ports/asr.py       # начальный ASR contract skeleton общего ядра
+|   `-- nadikt/
+|       |-- domain/ports/asr.py          # начальный ASR contract skeleton общего ядра
+|       `-- infrastructure/asr/          # optional fake-backed SDK probe adapters
 |-- benchmarks/
 |   `-- asr/                             # manifest validation, dry-run и benchmark helpers
 |-- model_packs/                         # docs и example manifests; без model weights
@@ -72,7 +74,11 @@ nadikt/
 | `docs/research/local_asr_performance_benchmark_plan.md` | Protocol локального ASR benchmark, метрики, offline/privacy gates и dry-run command. |
 | `docs/research/local_asr_performance_benchmark_results.md` | Шаблон результатов benchmark и decision matrix без выбора модели до измерений. |
 | `src/nadikt/domain/ports/asr.py` | Начальный SDK-neutral ASR contract общего ядра. |
+| `src/nadikt/infrastructure/asr/faster_whisper.py` | Lazy optional faster-whisper local CTranslate2 probe adapter; не импортирует SDK до load path. |
+| `src/nadikt/infrastructure/asr/gigaam.py` | Lazy optional GigaAM local loading probe wrapper; фиксирует `local_loading_unconfirmed` без подтверждённого local API. |
 | `benchmarks/asr/dry_run.py` | Dry-run manifest validator без загрузки моделей и без сетевых вызовов. |
+| `benchmarks/asr/local_model_probe.py` | Offline local package lifecycle probe runner без transcript/audio paths в JSON summary. |
+| `docs/research/local_asr_offline_package_prototype.md` | Findings package integrity/lifecycle prototype, fake-backed checks и blockers. |
 | `experiments/windows_insertion/README.md` | Команды, safety rules и versioned acceptance matrix disposable spike. |
 | `experiments/windows_insertion/insertion_spike/cli.py` | Ручной двухэтапный capture/deliver harness; не является точкой входа приложения. |
 | `.ai-factory/DESCRIPTION.md` | Краткий контекст продукта, выбранный стек и открытые технические решения. |
@@ -102,6 +108,7 @@ nadikt/
 | Handy PoC | `docs/research/handy_poc_plan.md` | Измеримый план проверки оставшихся рисков Handy. |
 | Windows insertion spike | `docs/research/windows_insertion_spike_results.md` | Проверенные факты, ограничения, production ports и решение REWORK. |
 | Local ASR benchmark plan | `docs/research/local_asr_performance_benchmark_plan.md` | Protocol, manifests, offline/privacy gates и dry-run command. |
+| Local ASR offline package prototype | `docs/research/local_asr_offline_package_prototype.md` | Package integrity, local probe lifecycle, fake-backed adapter checks и blockers. |
 | Local ASR benchmark results | `docs/research/local_asr_performance_benchmark_results.md` | Шаблон результатов и decision matrix. |
 | Участие | `CONTRIBUTING.md` | Workflow и pull request checklist. |
 | Безопасность | `SECURITY.md` | Private vulnerability reporting. |

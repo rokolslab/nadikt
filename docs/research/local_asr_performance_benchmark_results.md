@@ -81,6 +81,20 @@ Reference transcripts and audio remain in controlled storage. This public report
 | Logs contain no audio/transcript payload | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 | Result artifacts contain aggregates only | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 
+## Offline Package Prototype Snapshot
+
+| Check | Result | Evidence |
+|---|---|---|
+| Example inventory schema/checksum format | PASS | `model_packs/model_inventory.example.json` validates with dummy SHA-256 values |
+| Missing package dry-run | PASS | `missing_package=4`, `network_attempted=false` |
+| Local probe dry-run with offline marker | PASS | `passed_with_expected_missing_packages`, `offline.network_block_required=true` |
+| Corrupted synthetic package | PASS | Contract tests cover `checksum_mismatch` before backend factory creation |
+| faster-whisper lifecycle | FAKE-BACKED PASS | CPU INT8 constructor, Hub reject and lazy segment consumption verified with fake SDK |
+| GigaAM local loading | SOURCE-INFORMED / REAL RUN NOT RUN | Source review shows `download_root` cache-style loading can be probed; fake-backed tests verify adapter call shape |
+| Real model load/warm-up/transcribe | NOT RUN | No local real packages in repository/workspace |
+
+Details: `docs/research/local_asr_offline_package_prototype.md`.
+
 ## Decision Inputs
 
 ### Russian Mode
@@ -106,6 +120,7 @@ Reference transcripts and audio remain in controlled storage. This public report
 - WSL2 Ubuntu measurements do not replace Windows 10/11 acceptance measurements.
 - i3 12th generation development results do not redefine the MVP hardware baseline from ТЗ.
 - Dry-run validates manifests and safe failure behavior only; it does not measure ASR quality.
+- Offline package prototype validates lifecycle gates and fake-backed adapter behavior only; it does not prove real SDK package loading or ASR quality.
 - Reference transcripts and raw audio are controlled data and are not published in this report.
 
 ## Recommendation

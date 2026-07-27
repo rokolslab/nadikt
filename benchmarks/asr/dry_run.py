@@ -25,10 +25,18 @@ def run_dry_run(dataset_path: Path, models_path: Path) -> dict[str, Any]:
         packages, model_errors = validate_model_inventory(model_data)
 
     outcomes: Counter[str] = Counter()
+    warnings: Counter[str] = Counter()
     with measure_phase("dry_run_package_checks") as package_snapshots:
         for package in packages:
-            result = validate_local_package(package.package_id, package.package_path, models_path.parent)
+            result = validate_local_package(
+                package.package_id,
+                package.package_path,
+                models_path.parent,
+                package.critical_files,
+                package.license_marker,
+            )
             outcomes[result.outcome] += 1
+            warnings.update(result.warnings)
 
     created_at = datetime.now(UTC)
     summary = {
@@ -46,6 +54,7 @@ def run_dry_run(dataset_path: Path, models_path: Path) -> dict[str, Any]:
             "package_count": len(packages),
             "validation_errors": model_errors,
             "package_outcomes": dict(sorted(outcomes.items())),
+            "package_warnings": dict(sorted(warnings.items())),
         },
         "offline": {
             "network_attempted": False,

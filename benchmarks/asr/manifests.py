@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
 
 from .logging_config import get_logger
+from .package_integrity import is_unsafe_local_path, is_valid_sha256
 
 LOGGER = get_logger(__name__)
 
@@ -201,7 +202,7 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
             errors.append(f"package_{index}_invalid_backend")
         if _is_forbidden_model_identifier(package_path_raw):
             errors.append(f"package_{index}_forbidden_model_identifier")
-        if _is_unsafe_package_path(package_path_raw):
+        if is_unsafe_local_path(package_path_raw):
             errors.append(f"package_{index}_unsafe_absolute_path")
         if not isinstance(capabilities, Mapping):
             errors.append(f"package_{index}_capabilities_not_object")
@@ -215,6 +216,13 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
         if not all(isinstance(file_item, Mapping) for file_item in critical_files):
             errors.append(f"package_{index}_critical_file_not_object")
             continue
+        for file_index, file_item in enumerate(critical_files):
+            relative_path = str(file_item.get("relative_path", ""))
+            sha256 = str(file_item.get("sha256", ""))
+            if is_unsafe_local_path(relative_path) or not relative_path:
+                errors.append(f"package_{index}_critical_file_{file_index}_unsafe_path")
+            if not is_valid_sha256(sha256):
+                errors.append(f"package_{index}_critical_file_{file_index}_invalid_checksum")
 
         packages.append(
             ModelPackageManifest(
@@ -240,11 +248,6 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
 
 def _is_unsafe_path_label(value: str) -> bool:
     return _is_absolute_on_any_supported_platform(value) or value.startswith("~")
-
-
-def _is_unsafe_package_path(value: str) -> bool:
-    path = PurePosixPath(value.replace("\\", "/"))
-    return _is_absolute_on_any_supported_platform(value) or ".." in path.parts
 
 
 def _is_absolute_on_any_supported_platform(value: str) -> bool:
