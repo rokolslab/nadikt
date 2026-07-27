@@ -80,6 +80,7 @@ and processing of synthetic input by the destination application.
 ## Acceptance Matrix
 
 Matrix revision: `2026-07-26-2`.
+Tested code revision: `55a13ad` (`fix(windows): serialize insertion transaction lifecycle`).
 
 Environment:
 

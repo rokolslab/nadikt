@@ -12,6 +12,7 @@
 ## Среда
 
 - Дата: 2026-07-26.
+- Tested code revision: `55a13ad`.
 - Windows 11 Pro x64, версия `10.0.22621`, build `22621`.
 - Python `3.12.0`.
 - Controlled fixture: native Win32 `EDIT` и `ES_PASSWORD`.
