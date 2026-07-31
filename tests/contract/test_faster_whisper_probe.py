@@ -73,6 +73,17 @@ class FasterWhisperProbeTest(unittest.TestCase):
 
         self.assertEqual("backend_unavailable", result.outcome)
 
+    def test_incompatible_dependency_is_controlled_outcome(self) -> None:
+        probe = FasterWhisperLocalProbe()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            package_dir = Path(temp_dir) / "ct2-package"
+            package_dir.mkdir()
+            with patch("nadikt.infrastructure.asr.faster_whisper.importlib.import_module", return_value=object()):
+                result = probe.load(package_dir, _manifest())
+
+        self.assertEqual("backend_unavailable", result.outcome)
+
     def test_hub_identifier_is_rejected(self) -> None:
         probe = FasterWhisperLocalProbe(lambda *args, **kwargs: object())
 

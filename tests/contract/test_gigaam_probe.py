@@ -21,7 +21,8 @@ class GigaAMProbeTest(unittest.TestCase):
     def test_missing_dependency_is_controlled_outcome(self) -> None:
         probe = GigaAMLocalProbe(lambda: (_ for _ in ()).throw(ImportError("missing")))
 
-        result = probe.load(Path("local/gigaam"), _manifest())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = probe.load(Path(temp_dir), _manifest())
 
         self.assertEqual("backend_unavailable", result.outcome)
 
@@ -29,7 +30,8 @@ class GigaAMProbeTest(unittest.TestCase):
         module = types.SimpleNamespace(load_model_from_package=lambda _path: object())
         probe = GigaAMLocalProbe(lambda: module)
 
-        result = probe.load(Path("local/gigaam"), _manifest())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = probe.load(Path(temp_dir), _manifest())
 
         self.assertEqual("local_loading_unconfirmed", result.outcome)
 
@@ -67,6 +69,48 @@ class GigaAMProbeTest(unittest.TestCase):
         self.assertFalse(events[0][1][3])
         self.assertFalse(events[0][1][4])
         self.assertEqual([("transcribe", "sample.wav"), ("close", None)], events[1:])
+
+    def test_empty_critical_files_rejects_before_load_model(self) -> None:
+        module = types.SimpleNamespace(load_model=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not load")))
+        probe = GigaAMLocalProbe(lambda: module)
+        manifest = ModelPackageManifest(
+            package_id="gigaam-local",
+            candidate_id="gigaam-v3-e2e-ctc",
+            backend="gigaam",
+            model_name="GigaAM v3 e2e CTC",
+            model_revision="test",
+            package_path=Path("local/gigaam"),
+            license_marker="TO_BE_VERIFIED",
+            capabilities={},
+            inference_defaults={},
+            critical_files=(),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = probe.load(Path(temp_dir), manifest)
+
+        self.assertEqual("missing_critical_file", result.outcome)
+
+    def test_incomplete_required_files_rejects_before_load_model(self) -> None:
+        module = types.SimpleNamespace(load_model=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not load")))
+        probe = GigaAMLocalProbe(lambda: module)
+        manifest = ModelPackageManifest(
+            package_id="gigaam-local",
+            candidate_id="gigaam-v3-e2e-ctc",
+            backend="gigaam",
+            model_name="GigaAM v3 e2e CTC",
+            model_revision="test",
+            package_path=Path("local/gigaam"),
+            license_marker="TO_BE_VERIFIED",
+            capabilities={},
+            inference_defaults={},
+            critical_files=({"relative_path": "v3_e2e_ctc.ckpt", "sha256": "0" * 64},),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = probe.load(Path(temp_dir), manifest)
+
+        self.assertEqual("missing_critical_file", result.outcome)
 
     def test_segment_too_long_is_rejected_before_transcribe(self) -> None:
         class FakeModel:
@@ -113,7 +157,10 @@ def _manifest() -> ModelPackageManifest:
         license_marker="TO_BE_VERIFIED",
         capabilities={},
         inference_defaults={},
-        critical_files=(),
+        critical_files=(
+            {"relative_path": "v3_e2e_ctc.ckpt", "sha256": "0" * 64},
+            {"relative_path": "v3_e2e_ctc_tokenizer.model", "sha256": "0" * 64},
+        ),
     )
 
 

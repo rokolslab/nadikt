@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = run_dry_run(args.dataset, args.models)
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if summary["result"] != "invalid_manifests" else 2
+    return 0 if summary["result"] in {"passed", "passed_with_expected_missing_packages", "passed_without_packages"} else 2
 
 
 def _classify_summary(
@@ -93,6 +93,8 @@ def _classify_summary(
         return "passed_with_expected_missing_packages"
     if not outcomes:
         return "passed_without_packages"
+    if any(outcome not in {"package_present", "missing_package"} for outcome in outcomes):
+        return "completed_with_blockers"
     return "passed"
 
 

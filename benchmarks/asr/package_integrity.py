@@ -13,6 +13,7 @@ from .logging_config import get_logger
 LOGGER = get_logger(__name__)
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+WINDOWS_DRIVE_RE = re.compile(r"^[a-zA-Z]:")
 CHECKSUM_PREFIX_LENGTH = 12
 
 
@@ -55,6 +56,8 @@ def validate_package_integrity(
         return _finish(PackageIntegrityResult("invalid_package_path", package_id))
     if not candidate.exists():
         return _finish(PackageIntegrityResult("missing_package", package_id))
+    if not critical_files:
+        return _finish(PackageIntegrityResult("missing_critical_file", package_id))
 
     prefixes: list[str] = []
     for critical_file in critical_files:
@@ -102,9 +105,11 @@ def is_unsafe_local_path(value: str) -> bool:
     posix_path = PurePosixPath(normalized)
     return (
         ".." in posix_path.parts
+        or posix_path.is_absolute()
         or PurePosixPath(value).is_absolute()
         or PureWindowsPath(value).is_absolute()
-        or value.startswith("\\\\")
+        or WINDOWS_DRIVE_RE.match(value) is not None
+        or value.startswith("\\")
         or value.startswith("~")
     )
 

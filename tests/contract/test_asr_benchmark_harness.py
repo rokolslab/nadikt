@@ -112,6 +112,24 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
         self.assertNotIn("audio_bytes", rendered)
         self.assertNotIn("NADIKT_CONTROLLED_CANARY", rendered)
 
+    def test_dry_run_reports_package_integrity_blockers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package_dir = root / "local-packages" / "corrupted-package"
+            package_dir.mkdir(parents=True)
+            (package_dir / "manifest.txt").write_text("synthetic metadata only\n", encoding="utf-8")
+            models = load_json(ROOT / "model_packs/model_inventory.example.json")
+            models["packages"] = [models["packages"][3]]
+            models["packages"][0]["package_path"] = "local-packages/corrupted-package"
+            models["packages"][0]["critical_files"] = [{"relative_path": "manifest.txt", "sha256": "0" * 64}]
+            models_path = root / "inventory.json"
+            models_path.write_text(json.dumps(models, ensure_ascii=False), encoding="utf-8")
+
+            summary = run_dry_run(ROOT / "benchmarks/asr/datasets/dataset.example.json", models_path)
+
+        self.assertEqual("completed_with_blockers", summary["result"])
+        self.assertEqual({"checksum_mismatch": 1}, summary["models"]["package_outcomes"])
+
     def test_quality_metrics_use_synthetic_text_only(self) -> None:
         self.assertEqual(0.0, wer("проверить сервер", "проверить сервер").value)
         self.assertGreater(wer("проверить сервер", "проверить").value, 0.0)

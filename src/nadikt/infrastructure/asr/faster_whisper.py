@@ -31,7 +31,7 @@ class FasterWhisperLocalProbe:
 
         try:
             model_cls = self._whisper_model_cls or importlib.import_module("faster_whisper").WhisperModel
-        except ImportError:
+        except (AttributeError, ImportError):
             return _phase("backend_availability", ProbeOutcome.BACKEND_UNAVAILABLE.value, started)
 
         try:
@@ -69,10 +69,11 @@ class FasterWhisperLocalProbe:
     def close(self) -> ProbePhaseResult:
         started = time.monotonic()
         LOGGER.debug("faster_whisper_close_start")
+        model = self._model
+        self._model = None
         try:
-            if self._model is not None and hasattr(self._model, "close"):
-                self._model.close()
-            self._model = None
+            if model is not None and hasattr(model, "close"):
+                model.close()
         except Exception:
             LOGGER.error("faster_whisper_close_failed", extra={"error_code": ProbeOutcome.CLOSE_FAILED.value})
             return _phase("close", ProbeOutcome.CLOSE_FAILED.value, started)

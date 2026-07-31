@@ -13,6 +13,12 @@ from benchmarks.asr.logging_config import get_logger
 
 LOGGER = get_logger(__name__)
 MAX_GIGAAM_TRANSCRIBE_SECONDS = 25.0
+ALLOWED_GIGAAM_MODEL_NAMES = {"v3_e2e_ctc", "v3_e2e_rnnt", "multilingual_ctc"}
+REQUIRED_GIGAAM_CACHE_FILES = {
+    "v3_e2e_ctc": {"v3_e2e_ctc.ckpt", "v3_e2e_ctc_tokenizer.model"},
+    "v3_e2e_rnnt": {"v3_e2e_rnnt.ckpt", "v3_e2e_rnnt_tokenizer.model"},
+    "multilingual_ctc": {"multilingual_ctc.ckpt"},
+}
 
 
 class GigaAMLocalProbe:
@@ -25,6 +31,16 @@ class GigaAMLocalProbe:
     def load(self, package_dir: Path, manifest: ModelPackageManifest) -> ProbePhaseResult:
         started = time.monotonic()
         LOGGER.debug("gigaam_load_start", extra={"package_id": manifest.package_id})
+        if not package_dir.is_dir():
+            return _phase("load", ProbeOutcome.MISSING_PACKAGE.value, started)
+        if not manifest.critical_files:
+            return _phase("load", ProbeOutcome.MISSING_CRITICAL_FILE.value, started)
+        loader_model_name = _loader_model_name(manifest)
+        if not loader_model_name:
+            LOGGER.warning("gigaam_local_loading_unconfirmed", extra={"package_id": manifest.package_id})
+            return _phase("load", ProbeOutcome.LOCAL_LOADING_UNCONFIRMED.value, started)
+        if _missing_required_cache_files(loader_model_name, manifest):
+            return _phase("load", ProbeOutcome.MISSING_CRITICAL_FILE.value, started)
         try:
             module = self._module_loader()
         except ImportError:
@@ -35,10 +51,6 @@ class GigaAMLocalProbe:
             LOGGER.warning("gigaam_local_loading_unconfirmed", extra={"package_id": manifest.package_id})
             return _phase("load", ProbeOutcome.LOCAL_LOADING_UNCONFIRMED.value, started)
 
-        loader_model_name = _loader_model_name(manifest)
-        if not loader_model_name:
-            LOGGER.warning("gigaam_local_loading_unconfirmed", extra={"package_id": manifest.package_id})
-            return _phase("load", ProbeOutcome.LOCAL_LOADING_UNCONFIRMED.value, started)
         try:
             self._model = load_model(
                 loader_model_name,
@@ -77,10 +89,11 @@ class GigaAMLocalProbe:
     def close(self) -> ProbePhaseResult:
         started = time.monotonic()
         LOGGER.debug("gigaam_close_start")
+        model = self._model
+        self._model = None
         try:
-            if self._model is not None and hasattr(self._model, "close"):
-                self._model.close()
-            self._model = None
+            if model is not None and hasattr(model, "close"):
+                model.close()
         except Exception:
             LOGGER.error("gigaam_close_failed", extra={"error_code": ProbeOutcome.CLOSE_FAILED.value})
             return _phase("close", ProbeOutcome.CLOSE_FAILED.value, started)
@@ -95,7 +108,7 @@ def _phase(phase: str, outcome: str, started: float) -> ProbePhaseResult:
 
 def _loader_model_name(manifest: ModelPackageManifest) -> str | None:
     value = manifest.inference_defaults.get("gigaam_model_name")
-    if isinstance(value, str) and value:
+    if isinstance(value, str) and value in ALLOWED_GIGAAM_MODEL_NAMES:
         return value
     mapping = {
         "gigaam-v3-e2e-ctc": "v3_e2e_ctc",
@@ -103,6 +116,14 @@ def _loader_model_name(manifest: ModelPackageManifest) -> str | None:
         "gigaam-multilingual-220m": "multilingual_ctc",
     }
     return mapping.get(manifest.candidate_id)
+
+
+def _missing_required_cache_files(loader_model_name: str, manifest: ModelPackageManifest) -> bool:
+    required = REQUIRED_GIGAAM_CACHE_FILES.get(loader_model_name)
+    if not required:
+        return True
+    declared = {str(file_item.get("relative_path", "")).replace("\\", "/") for file_item in manifest.critical_files}
+    return not required.issubset(declared)
 
 
 __all__ = ["GigaAMLocalProbe", "MAX_GIGAAM_TRANSCRIBE_SECONDS"]

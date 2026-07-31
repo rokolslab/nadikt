@@ -93,6 +93,26 @@ class ModelPackageIntegrityTest(unittest.TestCase):
 
         self.assertIn("package_0_critical_file_0_invalid_checksum", errors)
 
+    def test_inventory_rejects_empty_critical_files(self) -> None:
+        models = load_json(ROOT / "model_packs/model_inventory.example.json")
+        models["packages"][0]["critical_files"] = []
+
+        packages, errors = validate_model_inventory(models)
+
+        self.assertIn("package_0_critical_files_required", errors)
+        self.assertEqual(3, len(packages))
+
+    def test_inventory_rejects_incomplete_gigaam_required_files(self) -> None:
+        models = load_json(ROOT / "model_packs/model_inventory.example.json")
+        models["packages"][0]["critical_files"] = [
+            {"relative_path": "v3_e2e_ctc.ckpt", "sha256": "0" * 64},
+        ]
+
+        packages, errors = validate_model_inventory(models)
+
+        self.assertIn("package_0_gigaam_required_files_missing", errors)
+        self.assertEqual(3, len(packages))
+
     def test_inventory_rejects_unsafe_critical_file_path(self) -> None:
         models = load_json(ROOT / "model_packs/model_inventory.example.json")
         models["packages"][0]["critical_files"][0]["relative_path"] = "../manifest.txt"
@@ -127,9 +147,13 @@ class ModelPackageIntegrityTest(unittest.TestCase):
             root = Path(temp_dir)
             traversal = validate_local_package("traversal", Path("../outside"), root)
             windows = validate_local_package("windows", Path("C:\\Users\\person\\model"), root)
+            windows_drive_relative = validate_local_package("windows-drive-relative", Path("C:models"), root)
+            windows_rooted = validate_local_package("windows-rooted", Path("\\models"), root)
 
         self.assertEqual("invalid_package_path", traversal.outcome)
         self.assertEqual("invalid_package_path", windows.outcome)
+        self.assertEqual("invalid_package_path", windows_drive_relative.outcome)
+        self.assertEqual("invalid_package_path", windows_rooted.outcome)
 
 
 def _sha256(path: Path) -> str:

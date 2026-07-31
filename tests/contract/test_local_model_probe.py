@@ -92,6 +92,42 @@ class LocalModelProbeTest(unittest.TestCase):
         self.assertEqual("passed_with_expected_missing_packages", summary["result"])
         self.assertFalse(called["factory"])
 
+    def test_invalid_manifest_stops_before_backend_factory(self) -> None:
+        called = {"factory": False}
+
+        def factory() -> object:
+            called["factory"] = True
+            raise AssertionError("backend must not be created for invalid manifests")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            payload = _inventory_payload(package_count=1)
+            payload["packages"][0]["package_path"] = "small"
+            models = root / "inventory.json"
+            models.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            summary = run_local_model_probe(models, backend_factories={"faster-whisper": factory})
+
+        self.assertEqual("invalid_manifests", summary["result"])
+        self.assertEqual(0, summary["selected_package_count"])
+        self.assertFalse(called["factory"])
+
+    def test_cli_exits_nonzero_for_package_blockers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            payload = _inventory_payload(package_count=1)
+            package_dir = root / payload["packages"][0]["package_path"]
+            package_dir.mkdir(parents=True)
+            (package_dir / "manifest.txt").write_text("synthetic metadata only\n", encoding="utf-8")
+            models = root / "inventory.json"
+            models.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            stdout = io.StringIO()
+
+            with contextlib.redirect_stdout(stdout):
+                exit_code = main(["--models", str(models), "--dry-run"])
+
+        self.assertEqual(2, exit_code)
+        self.assertIn('"result": "completed_with_blockers"', stdout.getvalue())
+
     def test_cli_summary_never_prints_audio_file_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -24,7 +24,17 @@ REQUIRED_CATEGORIES = {
 ALLOWED_BACKENDS = {"gigaam", "faster-whisper", "tone", "other-local"}
 FORBIDDEN_SAMPLE_KEYS = {"audio_path", "transcript", "reference_text", "hypothesis", "text"}
 FORBIDDEN_MODEL_IDENTIFIERS = {"tiny", "base", "small", "medium", "large", "large-v2", "large-v3"}
-WINDOWS_DRIVE_RE = re.compile(r"^[a-zA-Z]:[\\/]")
+WINDOWS_DRIVE_RE = re.compile(r"^[a-zA-Z]:")
+GIGAAM_CANDIDATE_MODEL_NAMES = {
+    "gigaam-v3-e2e-ctc": "v3_e2e_ctc",
+    "gigaam-v3-e2e-rnnt": "v3_e2e_rnnt",
+    "gigaam-multilingual-220m": "multilingual_ctc",
+}
+GIGAAM_REQUIRED_CACHE_FILES = {
+    "v3_e2e_ctc": {"v3_e2e_ctc.ckpt", "v3_e2e_ctc_tokenizer.model"},
+    "v3_e2e_rnnt": {"v3_e2e_rnnt.ckpt", "v3_e2e_rnnt_tokenizer.model"},
+    "multilingual_ctc": {"multilingual_ctc.ckpt"},
+}
 
 
 @dataclass(frozen=True, repr=False)
@@ -192,6 +202,7 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
             errors.append(f"package_{index}_missing:{','.join(missing)}")
             continue
 
+        package_errors: list[str] = []
         backend = str(item["backend"])
         package_path_raw = str(item["package_path"])
         package_path = Path(package_path_raw)
@@ -199,30 +210,43 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
         inference_defaults = item["inference_defaults"]
         critical_files = item["critical_files"]
         if backend not in ALLOWED_BACKENDS:
-            errors.append(f"package_{index}_invalid_backend")
+            package_errors.append(f"package_{index}_invalid_backend")
         if _is_forbidden_model_identifier(package_path_raw):
-            errors.append(f"package_{index}_forbidden_model_identifier")
+            package_errors.append(f"package_{index}_forbidden_model_identifier")
         if is_unsafe_local_path(package_path_raw):
-            errors.append(f"package_{index}_unsafe_absolute_path")
+            package_errors.append(f"package_{index}_unsafe_absolute_path")
         if not isinstance(capabilities, Mapping):
+            errors.extend(package_errors)
             errors.append(f"package_{index}_capabilities_not_object")
             continue
         if not isinstance(inference_defaults, Mapping):
+            errors.extend(package_errors)
             errors.append(f"package_{index}_inference_defaults_not_object")
             continue
         if not isinstance(critical_files, list):
+            errors.extend(package_errors)
             errors.append(f"package_{index}_critical_files_not_list")
             continue
+        if not critical_files:
+            package_errors.append(f"package_{index}_critical_files_required")
         if not all(isinstance(file_item, Mapping) for file_item in critical_files):
+            errors.extend(package_errors)
             errors.append(f"package_{index}_critical_file_not_object")
             continue
         for file_index, file_item in enumerate(critical_files):
             relative_path = str(file_item.get("relative_path", ""))
             sha256 = str(file_item.get("sha256", ""))
             if is_unsafe_local_path(relative_path) or not relative_path:
-                errors.append(f"package_{index}_critical_file_{file_index}_unsafe_path")
+                package_errors.append(f"package_{index}_critical_file_{file_index}_unsafe_path")
             if not is_valid_sha256(sha256):
-                errors.append(f"package_{index}_critical_file_{file_index}_invalid_checksum")
+                package_errors.append(f"package_{index}_critical_file_{file_index}_invalid_checksum")
+
+        if backend == "gigaam" and _missing_required_gigaam_files(str(item["candidate_id"]), inference_defaults, critical_files):
+            package_errors.append(f"package_{index}_gigaam_required_files_missing")
+
+        if package_errors:
+            errors.extend(package_errors)
+            continue
 
         packages.append(
             ModelPackageManifest(
@@ -264,3 +288,18 @@ def _is_forbidden_model_identifier(value: str) -> bool:
     if normalized in FORBIDDEN_MODEL_IDENTIFIERS:
         return True
     return normalized.startswith("openai/") or normalized.startswith("systran/")
+
+
+def _missing_required_gigaam_files(candidate_id: str, inference_defaults: Mapping[str, Any], critical_files: list[object]) -> bool:
+    model_name = inference_defaults.get("gigaam_model_name")
+    if not isinstance(model_name, str) or not model_name:
+        model_name = GIGAAM_CANDIDATE_MODEL_NAMES.get(candidate_id, "")
+    required = GIGAAM_REQUIRED_CACHE_FILES.get(model_name)
+    if not required:
+        return True
+    declared = {
+        str(file_item.get("relative_path", "")).replace("\\", "/")
+        for file_item in critical_files
+        if isinstance(file_item, Mapping)
+    }
+    return not required.issubset(declared)

@@ -45,7 +45,7 @@ def run_local_model_probe(
 
     model_data = load_json(models_path)
     packages, model_errors = validate_model_inventory(model_data)
-    selected = _select_packages(packages, candidate=candidate, backend=backend)
+    selected = [] if model_errors else _select_packages(packages, candidate=candidate, backend=backend)
     factories = backend_factories or _default_backend_factories()
 
     package_results: list[ProbePackageResult] = []
@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         audio_label=args.audio_label,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if summary["result"] != "invalid_manifests" else 2
+    return 0 if summary["result"] in {"passed", "passed_with_expected_missing_packages"} else 2
 
 
 def _probe_one_package(
