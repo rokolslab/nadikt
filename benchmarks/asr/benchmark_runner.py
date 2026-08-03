@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import wave
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -54,7 +55,7 @@ def run_benchmark(
             for package in selected
         ]
     else:
-        outcome, aggregates = _run_candidates(selected, binding_result, repeats)
+        outcome, aggregates = _run_candidates(selected, binding_result, repeats, inventory_path.parent)
 
     privacy_payload = {
         "model_error_count": len(model_errors),
@@ -117,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if result.outcome in {"dry_run", "success", "not_run"} else 2
 
 
-def _run_candidates(packages: list[object], binding_result: object | None, repeats: int) -> tuple[str, list[CandidateAggregate]]:
+def _run_candidates(packages: list[object], binding_result: object | None, repeats: int, inventory_root: Path) -> tuple[str, list[CandidateAggregate]]:
     if binding_result is None or not getattr(binding_result, "resolved_samples", ()):
         return "not_run", [
             CandidateAggregate(package.candidate_id, package.package_id, package.backend, repeats, 0, "not_run", {"bindings": "not_provided"})
@@ -129,22 +130,26 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
     for package in packages:
         completed = 0
         phase_outcomes: dict[str, str] = {}
+        package_dir = (inventory_root / package.package_path).resolve(strict=False)
         for _repeat in range(repeats):
-            sample = samples[0]
-            request = WorkerRequest(
-                nonce=new_nonce(),
-                package_id=package.package_id,
-                candidate_id=package.candidate_id,
-                backend=package.backend,
-                package_dir=package.package_path,
-                capabilities=package.capabilities,
-                inference_defaults=package.inference_defaults,
-                audio_file=sample.audio_path,
-                duration_seconds=1.0,
-            )
-            result = supervisor.run(request)
-            phase_outcomes.update({phase.phase: phase.outcome for phase in result.phases})
-            if result.worker_status == "success":
+            repeat_success = True
+            for sample in samples:
+                request = WorkerRequest(
+                    nonce=new_nonce(),
+                    package_id=package.package_id,
+                    candidate_id=package.candidate_id,
+                    backend=package.backend,
+                    package_dir=package_dir,
+                    capabilities=package.capabilities,
+                    inference_defaults=package.inference_defaults,
+                    audio_file=sample.audio_path,
+                    duration_seconds=_wav_duration_seconds(sample.audio_path),
+                )
+                result = supervisor.run(request)
+                phase_outcomes.update({phase.phase: phase.outcome for phase in result.phases})
+                if result.worker_status != "success":
+                    repeat_success = False
+            if repeat_success:
                 completed += 1
         aggregates.append(CandidateAggregate(package.candidate_id, package.package_id, package.backend, repeats, completed, "success" if completed == repeats else "fail", phase_outcomes))
     outcome = "success" if all(item.outcome == "success" for item in aggregates) else "fail"
@@ -157,6 +162,14 @@ def _git_revision() -> str:
     except Exception:
         return "unknown"
     return completed.stdout.strip() or "unknown"
+
+
+def _wav_duration_seconds(path: Path) -> float:
+    with wave.open(str(path), "rb") as audio:
+        frame_rate = audio.getframerate()
+        if frame_rate <= 0:
+            return 1.0
+        return audio.getnframes() / float(frame_rate)
 
 
 if __name__ == "__main__":
