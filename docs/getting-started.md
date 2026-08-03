@@ -30,6 +30,12 @@ Nadikt находится на стадии исследования и квал
 проверки hotkey, target window, clipboard и insertion запускаются на Windows
 host или Windows CI, а не внутри WSL.
 
+ASR benchmark имеет отдельный benchmark-only environment contract в
+[`requirements/benchmark/`](../requirements/benchmark/). Dry-run и contract tests
+остаются standard-library only; real ASR load/probe должен запускаться в заранее
+подготовленном Python 3.12 environment из offline wheelhouse и lock profile, без
+dependency resolution или network access во время run.
+
 ## Клонирование
 
 ```powershell
@@ -53,6 +59,18 @@ python -m unittest discover -s tests
 
 Tests используют injected API facades и synthetic canaries. Они не должны
 вводить текст в пользовательские приложения или менять реальный clipboard.
+
+ASR benchmark contract tests запускаются из корня репозитория:
+
+```powershell
+python3 -m unittest discover -s tests/contract
+```
+
+Privacy-safe fingerprint benchmark environment:
+
+```powershell
+python3 -m benchmarks.asr.environment_fingerprint
+```
 
 ## Controlled Windows Check
 

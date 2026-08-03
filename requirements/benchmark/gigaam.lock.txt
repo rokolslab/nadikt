@@ -1,0 +1,6 @@
+# Benchmark-only optional GigaAM profile.
+# Replace REVIEW_REQUIRED hashes with approved wheelhouse hashes before real runs.
+gigaam==0.1.0 --hash=REVIEW_REQUIRED
+torch==2.6.0 --hash=REVIEW_REQUIRED
+torchaudio==2.6.0 --hash=REVIEW_REQUIRED
+numpy==2.2.2 --hash=REVIEW_REQUIRED

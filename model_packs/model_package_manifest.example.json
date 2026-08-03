@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "manifest_type": "model_package_manifest",
+  "manifest_kind": "example",
+  "package_id": "faster-whisper-small-int8-local",
+  "candidate_id": "faster-whisper-small-int8",
+  "backend": "faster-whisper",
+  "model_name": "Whisper small CTranslate2 INT8",
+  "model_revision": "example-revision",
+  "package_format": "ctranslate2-directory",
+  "compatible_nadikt_versions": ["0.x-prototype"],
+  "rights_statuses": {
+    "local_evaluation": {
+      "status": "approved",
+      "review_record_id": "example-local-evaluation"
+    },
+    "redistribution": {
+      "status": "review_required",
+      "review_record_id": "example-redistribution-review"
+    },
+    "bundling": {
+      "status": "review_required",
+      "review_record_id": "example-bundling-review"
+    },
+    "installer_download": {
+      "status": "review_required",
+      "review_record_id": "example-installer-download-review"
+    }
+  },
+  "capabilities": {
+    "languages": ["ru", "en"],
+    "punctuation": true,
+    "max_segment_seconds": 30.0,
+    "streaming": false
+  },
+  "inference_defaults": {
+    "device": "cpu",
+    "compute_type": "int8",
+    "beam_size": 5,
+    "cpu_threads": "fixed-by-benchmark-environment",
+    "vad_filter": false
+  },
+  "critical_files": [
+    {
+      "relative_path": "model.bin",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size_bytes": 1,
+      "role": "ctranslate2_weights"
+    }
+  ],
+  "licenses": ["example-license-review-required"],
+  "notices": ["example-notice-review-required"]
+}

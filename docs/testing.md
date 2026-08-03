@@ -15,6 +15,14 @@ python3 -m unittest discover -s tests
 Команда проверяет manifest validation, dry-run, privacy audit, quality metrics
 и ASR contract redaction без реальных моделей и без пользовательских payload.
 
+ASR benchmark environment metadata находится в `pyproject.toml` и
+`requirements/benchmark/`. Эти locks относятся только к benchmark/probe runs и
+не фиксируют runtime или installer dependencies приложения.
+
+Корневой `.gitignore` дополнительно защищает локальные ASR packages, Hub caches,
+raw audio, reference transcripts и generated probe outputs. В Git допускаются
+только example manifests, documentation и tiny synthetic metadata/text fixtures.
+
 Disposable Windows insertion spike запускается отдельно:
 
 ```powershell
@@ -73,10 +81,53 @@ python3 -m benchmarks.asr.dry_run --dataset benchmarks/asr/datasets/dataset.exam
 packages, `network_attempted=false`, отсутствие transcript/audio payload в JSON
 summary.
 
+Для локальных real-package проверок используйте ignored package roots и run
+directories, например `local-packages/` и `benchmarks/asr/runs/`. Абсолютные
+пути, raw audio labels, transcripts и reference text не должны попадать в logs,
+stdout или JSON summaries.
+
 Для controlled offline acceptance можно выставить
 `NADIKT_BENCHMARK_OFFLINE_REQUIRED=1`. Эта переменная только фиксирует требование
 в dry-run summary; фактическая блокировка исходящей сети выполняется внешними
 средствами ОС или изолированной среды.
+
+## ASR Benchmark Environment Fingerprint
+
+```powershell
+python3 -m benchmarks.asr.environment_fingerprint
+```
+
+Fingerprint содержит только allowlisted fields: Python version/implementation,
+platform system/release/machine, locale encoding, package versions, lock digest
+prefixes и concrete inference defaults. Он не должен включать hostname,
+username, interpreter path, argv, environment values, wheel/cache paths или
+proxy/credential settings.
+
+Real ASR run должен использовать заранее подготовленный environment:
+
+1. Materialize selected backend lock under `requirements/benchmark/` with exact approved wheel hashes.
+2. Build/install from offline wheelhouse only.
+3. Set concrete thread defaults, for example `cpu_threads=4`, `OMP_NUM_THREADS=4`, `OPENBLAS_NUM_THREADS=1`, `MKL_NUM_THREADS=1`.
+4. Run fingerprint and store only safe JSON fields with benchmark results.
+5. Do not run `pip install`, dependency resolution or network access inside the benchmark run.
+
+## ASR Local Package Probe Dry Run
+
+```powershell
+python3 -m benchmarks.asr.local_model_probe --models model_packs/model_inventory.example.json --dry-run --offline-required
+```
+
+Ожидаемый результат без local packages: deterministic `missing_package`
+outcomes, `network_attempted=false`, backend adapters не создаются, audio path и
+transcript payload отсутствуют в JSON summary. Реальный `--audio-file`
+допускается только для controlled storage вне Git и должен сопровождаться safe
+`--audio-label`.
+
+Для следующего GigaAM real-load spike package directory должен быть заранее
+заполнен в cache-style layout SDK: `<gigaam_model_name>.ckpt` и, для `e2e` или
+`v1_rnnt`, `<gigaam_model_name>_tokenizer.model`. После обновления checksum в
+local inventory запуск выполняется той же командой без `--dry-run`, при внешне
+заблокированной сети.
 
 ## Manual Matrix
 

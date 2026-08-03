@@ -8,6 +8,7 @@
 - `audio_label` и `reference_label` являются opaque labels, а не абсолютными путями.
 - Raw audio хранится вне Git в controlled storage.
 - Reference transcripts хранятся вне публичных artifacts; manifest указывает только policy/label.
+- `benchmarks/asr/datasets/audio/`, `benchmarks/asr/datasets/references/` и generated `benchmarks/asr/runs/` игнорируются Git и предназначены только для локальных controlled checks.
 - Expected English terms можно указывать, если они не раскрывают пользовательские данные и нужны для ASR acceptance.
 - Runner logs используют только `sample_id`, `category`, duration bucket и outcome codes.
 
@@ -71,3 +72,4 @@
 - No field may contain transcript text, raw audio content, user dictionary entries or clipboard data.
 - Absolute paths are rejected by the dry-run validator because they can reveal local user or client names.
 - Sample IDs and labels are safe to print; references and hypotheses are not printed.
+- Committed fixtures must stay synthetic metadata-only; real audio, raw transcript, reference text and user dictionary material are never committed.
