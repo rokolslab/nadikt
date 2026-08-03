@@ -31,6 +31,8 @@ class CandidateAggregate:
     repeats_completed: int
     outcome: str
     phase_outcomes: Mapping[str, str] = field(default_factory=dict)
+    quality_aggregates: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    resource_aggregates: Mapping[str, object] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -41,6 +43,8 @@ class CandidateAggregate:
             "repeats_completed": self.repeats_completed,
             "outcome": self.outcome,
             "phase_outcomes": dict(sorted(self.phase_outcomes.items())),
+            "quality_aggregates": {name: dict(value) for name, value in sorted(self.quality_aggregates.items())},
+            "resource_aggregates": dict(sorted(self.resource_aggregates.items())),
         }
 
 

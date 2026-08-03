@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from benchmarks.asr.benchmark_results import BenchmarkResult, CandidateAggregate, validate_result_payload
-from benchmarks.asr.benchmark_runner import main, run_benchmark
+from benchmarks.asr.benchmark_runner import _aggregate_quality_results, _aggregate_resource_samples, main, run_benchmark
 
 
 class BenchmarkRunnerTest(unittest.TestCase):
@@ -76,6 +76,40 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertEqual(0, exit_code)
         self.assertIn('"outcome": "dry_run"', printed)
         self.assertNotIn(str(root), printed)
+
+    def test_candidate_aggregate_includes_safe_quality_and_resource_counters(self) -> None:
+        aggregate = CandidateAggregate(
+            "candidate",
+            "package",
+            "faster-whisper",
+            1,
+            1,
+            "success",
+            {"transcribe_probe": "success"},
+            _aggregate_quality_results(
+                {
+                    "wer": [
+                        {"metric_name": "wer", "numerator": 1, "denominator": 4, "status": "ok"},
+                        {"metric_name": "wer", "numerator": 2, "denominator": 6, "status": "ok"},
+                    ]
+                }
+            ),
+            _aggregate_resource_samples(
+                [
+                    {"audio_seconds": 2.0, "transcribe_probe_duration_ms": 500.0, "transcribe_probe_rtf": 0.25},
+                    {"audio_seconds": 4.0, "transcribe_probe_duration_ms": 2000.0, "transcribe_probe_rtf": 0.5},
+                ]
+            ),
+        )
+
+        rendered = json.dumps(aggregate.to_json(), ensure_ascii=False, sort_keys=True)
+
+        self.assertIn('"quality_aggregates"', rendered)
+        self.assertIn('"resource_aggregates"', rendered)
+        self.assertIn('"numerator": 3', rendered)
+        self.assertIn('"transcribe_probe_rtf_avg": 0.375', rendered)
+        self.assertNotIn("reference_text", rendered)
+        self.assertNotIn("hypothesis", rendered)
 
 
 def _write_inventory(root: Path) -> Path:

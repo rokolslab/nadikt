@@ -13,7 +13,7 @@ from typing import Any
 from .benchmark_results import BenchmarkResult, CandidateAggregate, write_result_atomic
 from .dataset_bindings import validate_dataset_bindings
 from .logging_config import get_logger
-from .manifests import load_json, load_model_inventory, validate_dataset_manifest
+from .manifests import SampleManifest, load_json, load_model_inventory, validate_dataset_manifest
 from .offline_evidence import unverified_evidence
 from .privacy_audit import audit_text_artifact
 from .worker_protocol import WorkerRequest, new_nonce
@@ -55,7 +55,7 @@ def run_benchmark(
             for package in selected
         ]
     else:
-        outcome, aggregates = _run_candidates(selected, binding_result, repeats, inventory_path.parent)
+        outcome, aggregates = _run_candidates(selected, binding_result, repeats, inventory_path.parent, samples)
 
     privacy_payload = {
         "model_error_count": len(model_errors),
@@ -118,22 +118,27 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if result.outcome in {"dry_run", "success", "not_run"} else 2
 
 
-def _run_candidates(packages: list[object], binding_result: object | None, repeats: int, inventory_root: Path) -> tuple[str, list[CandidateAggregate]]:
+def _run_candidates(packages: list[object], binding_result: object | None, repeats: int, inventory_root: Path, sample_manifests: list[SampleManifest]) -> tuple[str, list[CandidateAggregate]]:
     if binding_result is None or not getattr(binding_result, "resolved_samples", ()):
         return "not_run", [
             CandidateAggregate(package.candidate_id, package.package_id, package.backend, repeats, 0, "not_run", {"bindings": "not_provided"})
             for package in packages
         ]
     samples = tuple(getattr(binding_result, "resolved_samples"))
+    manifests_by_id = {sample.sample_id: sample for sample in sample_manifests}
     aggregates: list[CandidateAggregate] = []
     supervisor = WorkerSupervisor()
     for package in packages:
         completed = 0
         phase_outcomes: dict[str, str] = {}
+        quality_results: dict[str, list[dict[str, object]]] = {}
+        resource_samples: list[dict[str, float]] = []
         package_dir = (inventory_root / package.package_path).resolve(strict=False)
         for _repeat in range(repeats):
             repeat_success = True
             for sample in samples:
+                sample_manifest = manifests_by_id.get(sample.sample_id)
+                duration_seconds = _wav_duration_seconds(sample.audio_path)
                 request = WorkerRequest(
                     nonce=new_nonce(),
                     package_id=package.package_id,
@@ -143,15 +148,32 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
                     capabilities=package.capabilities,
                     inference_defaults=package.inference_defaults,
                     audio_file=sample.audio_path,
-                    duration_seconds=_wav_duration_seconds(sample.audio_path),
+                    reference_file=sample.reference_path,
+                    expected_english_terms=sample_manifest.expected_english_terms if sample_manifest is not None else (),
+                    expected_coding_terms=sample_manifest.expected_coding_terms if sample_manifest is not None else (),
+                    duration_seconds=duration_seconds,
                 )
                 result = supervisor.run(request)
                 phase_outcomes.update({phase.phase: phase.outcome for phase in result.phases})
+                _collect_quality_results(quality_results, result.quality_metrics)
+                resource_samples.append(_resource_sample(result.phases, duration_seconds))
                 if result.worker_status != "success":
                     repeat_success = False
             if repeat_success:
                 completed += 1
-        aggregates.append(CandidateAggregate(package.candidate_id, package.package_id, package.backend, repeats, completed, "success" if completed == repeats else "fail", phase_outcomes))
+        aggregates.append(
+            CandidateAggregate(
+                package.candidate_id,
+                package.package_id,
+                package.backend,
+                repeats,
+                completed,
+                "success" if completed == repeats else "fail",
+                phase_outcomes,
+                _aggregate_quality_results(quality_results),
+                _aggregate_resource_samples(resource_samples),
+            )
+        )
     outcome = "success" if all(item.outcome == "success" for item in aggregates) else "fail"
     return outcome, aggregates
 
@@ -162,6 +184,61 @@ def _git_revision() -> str:
     except Exception:
         return "unknown"
     return completed.stdout.strip() or "unknown"
+
+
+def _collect_quality_results(target: dict[str, list[dict[str, object]]], metrics: Any) -> None:
+    if not isinstance(metrics, dict):
+        return
+    for metric_name, metric in metrics.items():
+        if isinstance(metric, dict):
+            target.setdefault(str(metric_name), []).append(metric)
+
+
+def _aggregate_quality_results(metrics: dict[str, list[dict[str, object]]]) -> dict[str, dict[str, object]]:
+    aggregates: dict[str, dict[str, object]] = {}
+    for metric_name, items in metrics.items():
+        applicable = [item for item in items if item.get("status") == "ok"]
+        denominator = sum(_int_value(item.get("denominator")) for item in applicable)
+        numerator = sum(_int_value(item.get("numerator")) for item in applicable)
+        status = "ok" if denominator else "not_applicable"
+        aggregates[metric_name] = {
+            "metric_name": metric_name,
+            "value": round(numerator / denominator, 6) if denominator else 0.0,
+            "numerator": numerator,
+            "denominator": denominator,
+            "status": status,
+            "sample_measurements": len(items),
+        }
+    return aggregates
+
+
+def _resource_sample(phases: tuple[object, ...], audio_seconds: float) -> dict[str, float]:
+    sample: dict[str, float] = {"audio_seconds": audio_seconds}
+    for phase in phases:
+        phase_name = str(getattr(phase, "phase", "unknown"))
+        sample[f"{phase_name}_duration_ms"] = float(getattr(phase, "duration_ms", 0.0) or 0.0)
+    transcribe_ms = sample.get("transcribe_probe_duration_ms", 0.0)
+    if audio_seconds > 0:
+        sample["transcribe_probe_rtf"] = transcribe_ms / 1000.0 / audio_seconds
+    return sample
+
+
+def _aggregate_resource_samples(samples: list[dict[str, float]]) -> dict[str, object]:
+    if not samples:
+        return {}
+    keys = sorted({key for sample in samples for key in sample})
+    aggregates: dict[str, object] = {"sample_measurements": len(samples)}
+    for key in keys:
+        values = [sample[key] for sample in samples if key in sample]
+        aggregates[f"{key}_avg"] = round(sum(values) / len(values), 6)
+        aggregates[f"{key}_max"] = round(max(values), 6)
+    return aggregates
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value
 
 
 def _wav_duration_seconds(path: Path) -> float:

@@ -25,6 +25,7 @@ from nadikt.domain.ports.asr import (
 )
 
 from .offline_supervisor import build_unverified_worker_evidence
+from .quality_metrics import cer, coding_term_accuracy, english_term_accuracy, latin_preservation_rate, wer
 from .worker_protocol import WorkerPhase, WorkerRequest, WorkerResult, loads_request
 
 
@@ -47,6 +48,7 @@ def main() -> int:
 
 def run_worker(request: WorkerRequest) -> WorkerResult:
     phases: list[WorkerPhase] = []
+    quality_metrics: dict[str, dict[str, object]] = {}
     status = "success"
     engine = _engine_from_request(request)
     try:
@@ -68,8 +70,9 @@ def run_worker(request: WorkerRequest) -> WorkerResult:
             engine.warm_up(segment)
             phases.append(_phase("warmup", "success", started, segment_id=0))
             started = time.monotonic()
-            engine.transcribe_segment(segment)
+            transcript = engine.transcribe_segment(segment)
             phases.append(_phase("transcribe_probe", "success", started, segment_id=0))
+            quality_metrics = _quality_metrics(request, transcript.text)
         else:
             phases.append(WorkerPhase("warmup", "not_run"))
             phases.append(WorkerPhase("transcribe_probe", "not_run"))
@@ -92,8 +95,23 @@ def run_worker(request: WorkerRequest) -> WorkerResult:
         backend=request.backend,
         worker_status=status,
         phases=tuple(phases),
+        quality_metrics=quality_metrics,
         offline_evidence=evidence.to_json(),
     )
+
+
+def _quality_metrics(request: WorkerRequest, hypothesis: str) -> dict[str, dict[str, object]]:
+    if request.reference_file is None:
+        return {}
+    reference = request.reference_file.read_text(encoding="utf-8")
+    metrics = [
+        wer(reference, hypothesis),
+        cer(reference, hypothesis),
+        english_term_accuracy(list(request.expected_english_terms), hypothesis),
+        latin_preservation_rate(list(request.expected_english_terms), hypothesis),
+        coding_term_accuracy(list(request.expected_coding_terms), hypothesis),
+    ]
+    return {metric.metric_name: metric.to_json() for metric in metrics}
 
 
 def _engine_from_request(request: WorkerRequest) -> object:

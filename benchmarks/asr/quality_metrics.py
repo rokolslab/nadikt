@@ -20,6 +20,16 @@ class QualityMetricResult:
     status: str = "ok"
     version: str = METRIC_VERSION
 
+    def to_json(self) -> dict[str, object]:
+        return {
+            "metric_name": self.metric_name,
+            "value": round(self.value, 6),
+            "numerator": self.numerator,
+            "denominator": self.denominator,
+            "status": self.status,
+            "version": self.version,
+        }
+
     def safe_log_context(self, sample_id: str) -> dict[str, object]:
         return {
             "sample_id": sample_id,

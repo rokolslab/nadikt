@@ -18,6 +18,7 @@ SAFE_RESULT_KEYS = {
     "backend",
     "worker_status",
     "phases",
+    "quality_metrics",
     "offline_evidence",
 }
 SAFE_PHASE_KEYS = {"phase", "outcome", "duration_ms", "segment_id"}
@@ -34,6 +35,9 @@ class WorkerRequest:
     inference_defaults: Mapping[str, Any]
     critical_checksum_prefixes: tuple[str, ...] = ()
     audio_file: Path | None = None
+    reference_file: Path | None = None
+    expected_english_terms: tuple[str, ...] = ()
+    expected_coding_terms: tuple[Mapping[str, Any], ...] = ()
     duration_seconds: float | None = None
 
     def __repr__(self) -> str:
@@ -41,7 +45,8 @@ class WorkerRequest:
             "WorkerRequest("
             f"nonce_prefix={self.nonce[:8]!r}, package_id={self.package_id!r}, "
             f"candidate_id={self.candidate_id!r}, backend={self.backend!r}, "
-            f"audio_provided={self.audio_file is not None})"
+            f"audio_provided={self.audio_file is not None}, "
+            f"reference_provided={self.reference_file is not None})"
         )
 
     def to_worker_json(self) -> str:
@@ -56,6 +61,9 @@ class WorkerRequest:
             "inference_defaults": dict(self.inference_defaults),
             "critical_checksum_prefixes": list(self.critical_checksum_prefixes),
             "audio_file": str(self.audio_file) if self.audio_file is not None else None,
+            "reference_file": str(self.reference_file) if self.reference_file is not None else None,
+            "expected_english_terms": list(self.expected_english_terms),
+            "expected_coding_terms": [dict(item) for item in self.expected_coding_terms],
             "duration_seconds": self.duration_seconds,
         }
         return dumps_bounded(payload)
@@ -87,6 +95,7 @@ class WorkerResult:
     backend: str
     worker_status: str
     phases: tuple[WorkerPhase, ...] = field(default_factory=tuple)
+    quality_metrics: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
     offline_evidence: Mapping[str, object] = field(default_factory=dict)
 
     def __repr__(self) -> str:
@@ -106,6 +115,7 @@ class WorkerResult:
             "backend": self.backend,
             "worker_status": self.worker_status,
             "phases": [phase.to_json() for phase in self.phases],
+            "quality_metrics": {name: dict(value) for name, value in sorted(self.quality_metrics.items())},
             "offline_evidence": dict(self.offline_evidence),
         }
 
@@ -138,6 +148,9 @@ def loads_request(text: str) -> WorkerRequest:
         inference_defaults=_mapping(payload.get("inference_defaults")),
         critical_checksum_prefixes=tuple(str(item) for item in payload.get("critical_checksum_prefixes", ())),
         audio_file=Path(str(payload["audio_file"])) if payload.get("audio_file") else None,
+        reference_file=Path(str(payload["reference_file"])) if payload.get("reference_file") else None,
+        expected_english_terms=tuple(str(item) for item in payload.get("expected_english_terms", ())),
+        expected_coding_terms=tuple(_term_mapping(item) for item in payload.get("expected_coding_terms", ()) if isinstance(item, Mapping)),
         duration_seconds=float(payload["duration_seconds"]) if payload.get("duration_seconds") is not None else None,
     )
 
@@ -168,6 +181,7 @@ def loads_result(text: str) -> WorkerResult:
         backend=str(payload["backend"]),
         worker_status=str(payload["worker_status"]),
         phases=tuple(phases),
+        quality_metrics=_quality_mapping(payload.get("quality_metrics")),
         offline_evidence=_mapping(payload.get("offline_evidence")),
     )
 
@@ -185,6 +199,20 @@ def _mapping(value: object) -> Mapping[str, Any]:
     if isinstance(value, Mapping):
         return value
     return {}
+
+
+def _term_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
+    return dict(value)
+
+
+def _quality_mapping(value: object) -> Mapping[str, Mapping[str, object]]:
+    if not isinstance(value, Mapping):
+        return {}
+    result: dict[str, Mapping[str, object]] = {}
+    for name, metric in value.items():
+        if isinstance(metric, Mapping):
+            result[str(name)] = dict(metric)
+    return result
 
 
 __all__ = [

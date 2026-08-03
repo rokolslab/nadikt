@@ -58,12 +58,14 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
             backend="gigaam",
             worker_status="success",
             phases=(WorkerPhase("transcribe_probe", "success", 1.25, segment_id=0),),
+            quality_metrics={"wer": {"metric_name": "wer", "value": 0.25, "numerator": 1, "denominator": 4, "status": "ok"}},
             offline_evidence={"evidence_id": "offline-evidence-abc", "status": "NOT VERIFIED"},
         )
 
         rendered = json.dumps(result.to_json(), ensure_ascii=False)
 
         self.assertIn("transcribe_probe", rendered)
+        self.assertIn("quality_metrics", rendered)
         self.assertNotIn("audio_path", rendered)
         self.assertNotIn("reference_text", rendered)
         self.assertNotIn("hypothesis", rendered)
