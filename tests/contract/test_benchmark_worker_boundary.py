@@ -73,9 +73,23 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
     def test_worker_supervisor_uses_stdin_not_private_paths_in_argv(self) -> None:
         source = (ROOT / "benchmarks/asr/worker_supervisor.py").read_text(encoding="utf-8")
 
-        self.assertIn("input=request.to_worker_json()", source)
+        self.assertIn("process.communicate(input=request.to_worker_json()", source)
         self.assertIn('"-m", "benchmarks.asr.benchmark_worker"', source)
-        self.assertNotIn("audio_file", source.partition("subprocess.run(")[2].partition(")")[0])
+        popen_block = source.partition("self.popen_factory(")[2].partition(")\n        sampler")[0]
+        self.assertNotIn("audio_file", popen_block)
+
+    def test_worker_result_does_not_accept_worker_declared_resources(self) -> None:
+        payload = WorkerResult(
+            nonce="abc",
+            package_id="package-a",
+            candidate_id="candidate-a",
+            backend="faster-whisper",
+            worker_status="success",
+        ).to_json()
+        payload["resource_report"] = {"cpu_avg_percent": 10.0}
+
+        with self.assertRaisesRegex(ValueError, "worker_result_unknown_fields"):
+            loads_result(json.dumps(payload))
 
     def test_local_probe_default_factory_does_not_import_runtime_adapters_in_parent(self) -> None:
         source = (ROOT / "benchmarks/asr/local_model_probe.py").read_text(encoding="utf-8")

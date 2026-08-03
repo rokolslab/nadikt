@@ -284,7 +284,7 @@ class _SpawnedWorkerProbeAdapter:
             audio_file=audio_file,
             duration_seconds=float(package.inference_defaults.get("probe_duration_seconds") or 1.0) if audio_file is not None else None,
         )
-        return WorkerSupervisor().run(request)
+        return WorkerSupervisor().run(request).worker_result
 
 
 class _DomainEngineProbeAdapter:

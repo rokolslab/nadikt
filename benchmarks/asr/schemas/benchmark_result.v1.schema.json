@@ -11,8 +11,49 @@
     "run_kind": {"enum": ["coding_pilot", "full_benchmark", "dry_run"]},
     "nadikt_revision": {"type": "string", "minLength": 1},
     "dataset": {"type": "object", "additionalProperties": true},
-    "candidates": {"type": "array"},
-    "measurement": {"type": "object", "additionalProperties": true},
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "phase_outcomes", "quality_aggregates", "resource_aggregates"],
+        "properties": {
+          "candidate_id": {"type": "string", "minLength": 1},
+          "package_id": {"type": "string", "minLength": 1},
+          "backend": {"type": "string", "minLength": 1},
+          "repeats_requested": {"type": "integer", "minimum": 0},
+          "repeats_completed": {"type": "integer", "minimum": 0},
+          "outcome": {"type": "string", "minLength": 1},
+          "phase_outcomes": {"type": "object", "additionalProperties": {"type": "string"}},
+          "quality_aggregates": {"type": "object", "additionalProperties": true},
+          "resource_aggregates": {
+            "type": "object",
+            "additionalProperties": {"type": ["string", "number", "integer", "null"]},
+            "properties": {
+              "resource_backend": {"type": ["string", "null"]},
+              "resource_backend_version": {"type": ["string", "null"]},
+              "resource_cpu_normalization": {"type": ["string", "null"]},
+              "resource_report_count": {"type": "integer", "minimum": 0},
+              "resource_sample_count": {"type": "integer", "minimum": 0},
+              "resource_missed_sample_count": {"type": "integer", "minimum": 0},
+              "resource_cpu_avg_percent": {"type": "number", "minimum": 0},
+              "resource_cpu_max_percent": {"type": "number", "minimum": 0},
+              "resource_peak_rss_mib": {"type": "number", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "repeats_requested", "resource_sampler"],
+      "properties": {
+        "backend": {"const": "spawned-worker"},
+        "repeats_requested": {"type": "integer", "minimum": 0},
+        "resource_sampler": {"type": "string", "minLength": 1}
+      }
+    },
     "offline_evidence": {"type": "object", "additionalProperties": true},
     "privacy": {"type": "object", "additionalProperties": true},
     "outcome": {"enum": ["success", "fail", "not_run", "dry_run", "invalid_inputs"]}

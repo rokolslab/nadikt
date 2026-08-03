@@ -21,7 +21,9 @@ if str(ROOT) not in sys.path:
 
 from benchmarks.asr.benchmark_results import BenchmarkResult, CandidateAggregate, validate_result_payload
 from benchmarks.asr.benchmark_runner import _aggregate_quality_results, _aggregate_resource_samples, main, run_benchmark
+from benchmarks.asr.resource_measurement import ResourceReport
 from benchmarks.asr.worker_protocol import WorkerPhase, WorkerRequest, WorkerResult
+from benchmarks.asr.worker_supervisor import SupervisedWorkerResult
 
 
 class _FakeWorkerSupervisor:
@@ -30,7 +32,7 @@ class _FakeWorkerSupervisor:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    def run(self, request: WorkerRequest) -> WorkerResult:
+    def run(self, request: WorkerRequest) -> SupervisedWorkerResult:
         call_index = len(self.calls)
         if call_index >= len(self._RESULTS):
             raise AssertionError("unexpected_fake_supervisor_call")
@@ -43,7 +45,7 @@ class _FakeWorkerSupervisor:
                 "transcribe_duration_ms": duration_ms,
             }
         )
-        return WorkerResult(
+        worker_result = WorkerResult(
             nonce=request.nonce,
             package_id=request.package_id,
             candidate_id=request.candidate_id,
@@ -62,6 +64,22 @@ class _FakeWorkerSupervisor:
             },
             offline_evidence={"status": "NOT VERIFIED"},
         )
+        resource_report = ResourceReport(
+            backend="fake-sampler",
+            backend_version="v1",
+            status="ok" if call_index == 0 else "partial",
+            sample_interval_ms=200,
+            duration_seconds=duration_ms / 1000.0,
+            sample_count=3 + call_index,
+            missed_sample_count=call_index,
+            user_cpu_seconds=1.0 + call_index,
+            system_cpu_seconds=0.5,
+            cpu_avg_percent=50.0 + call_index * 10.0,
+            cpu_max_percent=80.0 + call_index * 10.0,
+            peak_rss_mib=256.0 + call_index,
+            process_count_max=2,
+        )
+        return SupervisedWorkerResult(worker_result, resource_report)
 
 
 class BenchmarkRunnerTest(unittest.TestCase):
@@ -81,6 +99,22 @@ class BenchmarkRunnerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "benchmark_result_unknown_fields"):
             validate_result_payload(payload)
+
+    def test_result_payload_rejects_non_finite_nested_resource_values(self) -> None:
+        payload = BenchmarkResult(
+            run_id="run-1",
+            run_kind="coding_pilot",
+            nadikt_revision="abc123",
+            dataset={"dataset_id": "safe"},
+            candidates=(CandidateAggregate("candidate", "package", "faster-whisper", 1, 1, "success", resource_aggregates={"resource_cpu_avg_percent": float("nan")}),),
+            measurement={"backend": "spawned-worker", "repeats_requested": 1, "resource_sampler": "fake:v1"},
+            offline_evidence={"status": "NOT VERIFIED"},
+            privacy={},
+            outcome="success",
+        ).to_json
+
+        with self.assertRaisesRegex(ValueError, "benchmark_result_non_finite_number"):
+            payload()
 
     def test_dry_run_writes_safe_aggregate_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -171,6 +205,23 @@ class BenchmarkRunnerTest(unittest.TestCase):
                 "sample_measurements": 2,
                 "audio_seconds_avg": 1.0,
                 "audio_seconds_max": 1.0,
+                "resource_backend": "fake-sampler",
+                "resource_backend_version": "v1",
+                "resource_cpu_avg_percent": 56.666667,
+                "resource_cpu_max_percent": 90.0,
+                "resource_cpu_normalization": "one_logical_cpu_100_percent",
+                "resource_duration_seconds_sum": 1.5,
+                "resource_missed_sample_count": 1,
+                "resource_peak_rss_mib": 257.0,
+                "resource_process_count_max": 2,
+                "resource_report_count": 2,
+                "resource_sample_count": 7,
+                "resource_sample_interval_ms": 200,
+                "resource_status_ok_count": 1,
+                "resource_status_partial_count": 1,
+                "resource_status_unavailable_count": 0,
+                "resource_system_cpu_seconds_sum": 1.0,
+                "resource_user_cpu_seconds_sum": 3.0,
                 "transcribe_probe_duration_ms_avg": 750.0,
                 "transcribe_probe_duration_ms_max": 1000.0,
                 "transcribe_probe_rtf_avg": 0.75,
@@ -179,6 +230,7 @@ class BenchmarkRunnerTest(unittest.TestCase):
             candidate.resource_aggregates,
         )
         self.assertEqual(candidate.to_json(), persisted["candidates"][0])
+        self.assertEqual("fake-sampler:v1", persisted["measurement"]["resource_sampler"])
         rendered = json.dumps(persisted, ensure_ascii=False, sort_keys=True)
         for private_value in (
             private_root,
@@ -210,8 +262,8 @@ class BenchmarkRunnerTest(unittest.TestCase):
             ),
             _aggregate_resource_samples(
                 [
-                    {"audio_seconds": 2.0, "transcribe_probe_duration_ms": 500.0, "transcribe_probe_rtf": 0.25},
-                    {"audio_seconds": 4.0, "transcribe_probe_duration_ms": 2000.0, "transcribe_probe_rtf": 0.5},
+                    {"audio_seconds": 2.0, "transcribe_probe_duration_ms": 500.0, "transcribe_probe_rtf": 0.25, "resource_backend": "fake", "resource_backend_version": "v1", "resource_cpu_normalization": "one_logical_cpu_100_percent", "resource_status": "ok", "resource_sample_interval_ms": 100, "resource_sample_count": 2, "resource_missed_sample_count": 0, "resource_cpu_avg_percent": 10.0, "resource_cpu_max_percent": 20.0, "resource_peak_rss_mib": 100.0},
+                    {"audio_seconds": 4.0, "transcribe_probe_duration_ms": 2000.0, "transcribe_probe_rtf": 0.5, "resource_backend": "fake", "resource_backend_version": "v1", "resource_cpu_normalization": "one_logical_cpu_100_percent", "resource_status": "ok", "resource_sample_interval_ms": 100, "resource_sample_count": 2, "resource_missed_sample_count": 0, "resource_cpu_avg_percent": 30.0, "resource_cpu_max_percent": 40.0, "resource_peak_rss_mib": 120.0},
                 ]
             ),
         )
@@ -222,6 +274,7 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertIn('"resource_aggregates"', rendered)
         self.assertIn('"numerator": 3', rendered)
         self.assertIn('"transcribe_probe_rtf_avg": 0.375', rendered)
+        self.assertIn('"resource_peak_rss_mib": 120.0', rendered)
         self.assertNotIn("reference_text", rendered)
         self.assertNotIn("hypothesis", rendered)
 

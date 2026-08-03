@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,6 +86,24 @@ def validate_result_payload(payload: Mapping[str, object]) -> None:
     forbidden = ("audio_path", "reference_text", "hypothesis", "transcript", "argv", "environment", "hostname")
     if any(marker in rendered for marker in forbidden):
         raise ValueError("benchmark_result_forbidden_payload")
+    _validate_json_numbers(payload)
+
+
+def _validate_json_numbers(value: object) -> None:
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return
+    if isinstance(value, (int, float)):
+        if not math.isfinite(float(value)):
+            raise ValueError("benchmark_result_non_finite_number")
+        return
+    if isinstance(value, Mapping):
+        for nested in value.values():
+            _validate_json_numbers(nested)
+        return
+    if isinstance(value, list):
+        for nested in value:
+            _validate_json_numbers(nested)
+        return
 
 
 def write_result_atomic(result: BenchmarkResult, output_path: Path) -> None:
