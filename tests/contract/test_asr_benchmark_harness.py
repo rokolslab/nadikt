@@ -121,7 +121,7 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
             models["packages"][0]["package_path"] = "local-packages/corrupted-package"
             manifest = load_json(ROOT / "model_packs/model_package_manifest.example.json")
             manifest["critical_files"] = [
-                {"relative_path": "manifest.txt", "sha256": "0" * 64, "size_bytes": 1, "role": "synthetic"}
+                {"relative_path": "manifest.txt", "sha256": "0" * 64, "size_bytes": 24, "role": "ctranslate2_weights"}
             ]
             manifest_path = root / "model_package_manifest.example.json"
             manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")

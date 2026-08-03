@@ -22,6 +22,26 @@ ALLOWED_TOP_LEVEL_KEYS = {
     "privacy",
     "outcome",
 }
+ALLOWED_TOP_LEVEL_KEYS_V2 = {
+    "schema_version",
+    "run_id",
+    "run_kind",
+    "nadikt_revision",
+    "dataset",
+    "settings",
+    "candidates",
+    "measurement",
+    "offline_evidence",
+    "privacy",
+    "validity",
+    "outcome",
+}
+ALLOWED_CANDIDATE_KEYS_V2 = {"candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "repeat_outcomes", "quality_aggregates", "resource_aggregates"}
+ALLOWED_REPEAT_KEYS_V2 = {"repeat_index", "outcome", "phase_outcomes", "sample_outcomes"}
+ALLOWED_SAMPLE_KEYS_V2 = {"sample_id", "category", "scored", "outcome", "phase_outcomes", "metrics"}
+ALLOWED_PHASE_KEYS_V2 = {"phase", "outcome", "duration_ms"}
+ALLOWED_METRIC_KEYS_V2 = {"metric_name", "metric_version", "value", "numerator", "denominator", "status"}
+RESULT_VERSIONS = {1, 2}
 
 
 @dataclass(frozen=True)
@@ -82,14 +102,105 @@ class BenchmarkResult:
 
 
 def validate_result_payload(payload: Mapping[str, object]) -> None:
+    version = payload.get("schema_version")
+    if version == 1:
+        _validate_result_payload_v1(payload)
+        return
+    if version == 2:
+        _validate_result_payload_v2(payload)
+        return
+    raise ValueError("benchmark_result_unknown_schema_version")
+
+
+def _validate_result_payload_v1(payload: Mapping[str, object]) -> None:
     unknown = set(payload).difference(ALLOWED_TOP_LEVEL_KEYS)
     if unknown:
         raise ValueError("benchmark_result_unknown_fields")
-    rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    _validate_json_numbers(payload)
+    rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
     forbidden = ("audio_path", "reference_text", "hypothesis", "transcript", "argv", "environment", "hostname")
     if any(marker in rendered for marker in forbidden):
         raise ValueError("benchmark_result_forbidden_payload")
+
+
+def _validate_result_payload_v2(payload: Mapping[str, object]) -> None:
+    unknown = set(payload).difference(ALLOWED_TOP_LEVEL_KEYS_V2)
+    if unknown:
+        raise ValueError("benchmark_result_unknown_fields")
+    required = ALLOWED_TOP_LEVEL_KEYS_V2
+    if required.difference(payload):
+        raise ValueError("benchmark_result_missing_fields")
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        raise ValueError("benchmark_result_candidates_not_list")
+    for candidate in candidates:
+        _validate_candidate_v2(candidate)
     _validate_json_numbers(payload)
+    rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    forbidden = ("audio_path", "reference_text", "hypothesis", "transcript", "argv", "environment", "hostname")
+    if any(marker in rendered for marker in forbidden):
+        raise ValueError("benchmark_result_forbidden_payload")
+
+
+def _validate_candidate_v2(value: object) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError("benchmark_result_candidate_not_object")
+    if set(value).difference(ALLOWED_CANDIDATE_KEYS_V2):
+        raise ValueError("benchmark_result_candidate_unknown_fields")
+    if ALLOWED_CANDIDATE_KEYS_V2.difference(value):
+        raise ValueError("benchmark_result_candidate_missing_fields")
+    repeats = value["repeat_outcomes"]
+    if not isinstance(repeats, list):
+        raise ValueError("benchmark_result_repeats_not_list")
+    for repeat in repeats:
+        _validate_repeat_v2(repeat)
+
+
+def _validate_repeat_v2(value: object) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError("benchmark_result_repeat_not_object")
+    if set(value).difference(ALLOWED_REPEAT_KEYS_V2):
+        raise ValueError("benchmark_result_repeat_unknown_fields")
+    if ALLOWED_REPEAT_KEYS_V2.difference(value):
+        raise ValueError("benchmark_result_repeat_missing_fields")
+    _validate_phase_outcomes_v2(value["phase_outcomes"])
+    samples = value["sample_outcomes"]
+    if not isinstance(samples, list):
+        raise ValueError("benchmark_result_samples_not_list")
+    for sample in samples:
+        _validate_sample_v2(sample)
+
+
+def _validate_sample_v2(value: object) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError("benchmark_result_sample_not_object")
+    if set(value).difference(ALLOWED_SAMPLE_KEYS_V2):
+        raise ValueError("benchmark_result_sample_unknown_fields")
+    if ALLOWED_SAMPLE_KEYS_V2.difference(value):
+        raise ValueError("benchmark_result_sample_missing_fields")
+    _validate_phase_outcomes_v2(value["phase_outcomes"])
+    metrics = value["metrics"]
+    if not isinstance(metrics, list):
+        raise ValueError("benchmark_result_metrics_not_list")
+    for metric in metrics:
+        if not isinstance(metric, Mapping):
+            raise ValueError("benchmark_result_metric_not_object")
+        if set(metric).difference(ALLOWED_METRIC_KEYS_V2):
+            raise ValueError("benchmark_result_metric_unknown_fields")
+        if ALLOWED_METRIC_KEYS_V2.difference(metric):
+            raise ValueError("benchmark_result_metric_missing_fields")
+
+
+def _validate_phase_outcomes_v2(value: object) -> None:
+    if not isinstance(value, list):
+        raise ValueError("benchmark_result_phases_not_list")
+    for phase in value:
+        if not isinstance(phase, Mapping):
+            raise ValueError("benchmark_result_phase_not_object")
+        if set(phase).difference(ALLOWED_PHASE_KEYS_V2):
+            raise ValueError("benchmark_result_phase_unknown_fields")
+        if ALLOWED_PHASE_KEYS_V2.difference(phase):
+            raise ValueError("benchmark_result_phase_missing_fields")
 
 
 def _validate_json_numbers(value: object) -> None:
@@ -111,7 +222,7 @@ def _validate_json_numbers(value: object) -> None:
 
 def write_result_atomic(result: BenchmarkResult, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(result.to_json(), ensure_ascii=False, indent=2, sort_keys=True)
+    payload = json.dumps(result.to_json(), ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=output_path.parent, delete=False) as file:
         temp_path = Path(file.name)
         file.write(payload)
@@ -119,4 +230,4 @@ def write_result_atomic(result: BenchmarkResult, output_path: Path) -> None:
     temp_path.replace(output_path)
 
 
-__all__ = ["BenchmarkResult", "CandidateAggregate", "validate_result_payload", "write_result_atomic"]
+__all__ = ["BenchmarkResult", "CandidateAggregate", "RESULT_VERSIONS", "validate_result_payload", "write_result_atomic"]

@@ -105,10 +105,11 @@ def _inventory_payload(sha256: str) -> dict[str, object]:
         "model_revision": "test",
         "package_format": "synthetic",
         "compatible_nadikt_versions": ["0.x-prototype"],
+        "compatible_backend_versions": ["synthetic-backend==1"],
         "rights_statuses": _rights_statuses(),
         "capabilities": {"languages": ["ru"], "punctuation": True, "max_segment_seconds": 25.0, "streaming": False},
         "inference_defaults": {"beam_size": 5, "device": "cpu", "compute_type": "int8"},
-        "critical_files": [{"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": 1, "role": "synthetic"}],
+        "critical_files": [{"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": 24, "role": "synthetic"}],
         "licenses": ["synthetic"],
         "notices": ["synthetic"],
     }

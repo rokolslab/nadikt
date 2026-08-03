@@ -44,6 +44,7 @@ def validate_local_package(
     root: Path,
     critical_files: tuple[Mapping[str, str], ...] = (),
     rights_statuses: Mapping[str, Mapping[str, str]] | None = None,
+    package_format: str = "",
 ) -> OfflineCheckResult:
     """Classify local package availability without attempting network access."""
 
@@ -54,6 +55,7 @@ def validate_local_package(
         inventory_root=root,
         critical_files=critical_files,
         rights_statuses=rights_statuses,
+        package_format=package_format,
     )
     result = OfflineCheckResult(
         outcome=integrity.outcome,

@@ -13,7 +13,22 @@ if str(SRC) not in sys.path:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from benchmarks.asr.worker_protocol import WorkerPhase, WorkerRequest, WorkerResult, loads_result, new_nonce
+from benchmarks.asr.worker_protocol import (
+    WorkerMetricResult,
+    WorkerPhase,
+    WorkerRepeatOutcome,
+    WorkerRepeatRequest,
+    WorkerRequest,
+    WorkerRequestV2,
+    WorkerResult,
+    WorkerResultV2,
+    WorkerSampleOutcome,
+    WorkerSampleRequest,
+    loads_request_v2,
+    loads_result,
+    loads_result_v2,
+    new_nonce,
+)
 
 
 class BenchmarkWorkerBoundaryTest(unittest.TestCase):
@@ -90,6 +105,129 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "worker_result_unknown_fields"):
             loads_result(json.dumps(payload))
+
+    def test_worker_request_v2_round_trips_repeat_with_warmup_and_scored_samples(self) -> None:
+        request = WorkerRequestV2(
+            nonce="nonce-v2",
+            package_id="package-a",
+            candidate_id="candidate-a",
+            backend="faster-whisper",
+            package_dir=Path("/private/model"),
+            capabilities={"languages": ["ru"]},
+            inference_defaults={"beam_size": 5},
+            repeat=WorkerRepeatRequest(
+                repeat_index=0,
+                warmup_sample=WorkerSampleRequest(
+                    sample_id="warmup_001",
+                    category="warmup",
+                    audio_file=Path("/private/audio/warmup.wav"),
+                    reference_file=None,
+                    duration_seconds=5.0,
+                    scored=False,
+                ),
+                scored_samples=(
+                    WorkerSampleRequest(
+                        sample_id="ru_short_001",
+                        category="ru_short",
+                        audio_file=Path("/private/audio/ru_short.wav"),
+                        reference_file=Path("/private/references/ru_short.txt"),
+                        duration_seconds=12.0,
+                        scored=True,
+                    ),
+                ),
+            ),
+        )
+
+        loaded = loads_request_v2(request.to_worker_json())
+
+        self.assertEqual("nonce-v2", loaded.nonce)
+        self.assertEqual(0, loaded.repeat.repeat_index)
+        self.assertFalse(loaded.repeat.warmup_sample.scored)
+        self.assertEqual("ru_short_001", loaded.repeat.scored_samples[0].sample_id)
+        self.assertNotIn("warmup.wav", repr(loaded))
+
+    def test_worker_request_v2_rejects_unknown_version_and_bad_scored_flag(self) -> None:
+        request = WorkerRequestV2(
+            nonce="nonce-v2",
+            package_id="package-a",
+            candidate_id="candidate-a",
+            backend="faster-whisper",
+            package_dir=Path("/private/model"),
+            capabilities={},
+            inference_defaults={},
+            repeat=WorkerRepeatRequest(
+                repeat_index=0,
+                warmup_sample=WorkerSampleRequest("warmup", "warmup", Path("/private/w.wav"), None, 1.0, False),
+                scored_samples=(WorkerSampleRequest("sample", "ru_short", Path("/private/s.wav"), None, 1.0, True),),
+            ),
+        ).to_worker_json()
+        payload = json.loads(request)
+        payload["schema_version"] = 999
+
+        with self.assertRaisesRegex(ValueError, "invalid_worker_protocol_version"):
+            loads_request_v2(json.dumps(payload))
+
+        payload = json.loads(request)
+        payload["repeat"]["warmup_sample"]["scored"] = True
+        with self.assertRaisesRegex(ValueError, "worker_sample_scored_mismatch"):
+            loads_request_v2(json.dumps(payload))
+
+    def test_worker_result_v2_contains_typed_repeat_sample_and_metrics(self) -> None:
+        result = WorkerResultV2(
+            nonce="nonce-v2",
+            package_id="package-a",
+            candidate_id="candidate-a",
+            backend="faster-whisper",
+            worker_status="success",
+            repeat=WorkerRepeatOutcome(
+                repeat_index=1,
+                outcome="success",
+                phases=(WorkerPhase("load", "success", 10.0),),
+                samples=(
+                    WorkerSampleOutcome(
+                        sample_id="ru_short_001",
+                        category="ru_short",
+                        scored=True,
+                        outcome="success",
+                        phases=(WorkerPhase("transcribe", "success", 20.0),),
+                        metrics=(WorkerMetricResult("wer", "quality-metrics-v2", 0.25, 1, 4, "ok"),),
+                    ),
+                ),
+            ),
+        )
+
+        loaded = loads_result_v2(result.to_worker_json())
+
+        self.assertEqual("success", loaded.worker_status)
+        self.assertEqual("quality-metrics-v2", loaded.repeat.samples[0].metrics[0].metric_version)
+        self.assertNotIn("quality_metrics", json.dumps(result.to_json(), ensure_ascii=False))
+
+    def test_worker_result_v2_rejects_unknown_fields_and_non_finite_values(self) -> None:
+        result = WorkerResultV2(
+            nonce="nonce-v2",
+            package_id="package-a",
+            candidate_id="candidate-a",
+            backend="faster-whisper",
+            worker_status="success",
+            repeat=WorkerRepeatOutcome(0, "success"),
+        ).to_json()
+        result["repeat"]["samples"] = []
+        result["repeat"]["phase_outcomes"] = []
+        result["repeat"]["private_path"] = "/private/audio.wav"
+
+        with self.assertRaisesRegex(ValueError, "worker_repeat_unknown_fields"):
+            loads_result_v2(json.dumps(result))
+
+        result = WorkerResultV2(
+            nonce="nonce-v2",
+            package_id="package-a",
+            candidate_id="candidate-a",
+            backend="faster-whisper",
+            worker_status="success",
+            repeat=WorkerRepeatOutcome(0, "success", phases=(WorkerPhase("load", "success", float("nan")),)),
+        )
+        with self.assertRaisesRegex(ValueError, "worker_message_non_finite_number"):
+            result.to_worker_json()
 
     def test_local_probe_default_factory_does_not_import_runtime_adapters_in_parent(self) -> None:
         source = (ROOT / "benchmarks/asr/local_model_probe.py").read_text(encoding="utf-8")

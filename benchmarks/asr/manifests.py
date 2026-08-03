@@ -86,6 +86,9 @@ class ModelPackageManifest:
     backend: str
     model_name: str
     model_revision: str
+    package_format: str
+    compatible_nadikt_versions: tuple[str, ...]
+    compatible_backend_versions: tuple[str, ...]
     package_path: Path
     manifest_relative_path: str
     manifest_sha256: str
@@ -138,6 +141,15 @@ def load_model_inventory(path: Path) -> tuple[list[ModelPackageManifest], list[s
         )
         errors.extend(f"package_{index}_{error}" for error in manifest_errors)
         if package is not None:
+            if package.package_id != entry.package_id:
+                errors.append(f"package_{index}_package_id_mismatch")
+                continue
+            if entry.candidate_id and package.candidate_id != entry.candidate_id:
+                errors.append(f"package_{index}_candidate_id_mismatch")
+                continue
+            if entry.backend and package.backend != entry.backend:
+                errors.append(f"package_{index}_backend_mismatch")
+                continue
             packages.append(package)
 
     LOGGER.info(
@@ -466,12 +478,20 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
     errors: list[str] = []
     if data.get("schema_version") != 1:
         errors.append("invalid_schema_version")
+    manifest_kind = str(data.get("manifest_kind", ""))
+    if manifest_kind == "local_inventory":
+        if not _non_empty_string(data.get("trusted_index_id")):
+            errors.append("trusted_index_id_required")
+        if not is_valid_sha256(str(data.get("trusted_index_sha256", "")).lower()):
+            errors.append("trusted_index_sha256_required")
 
     packages_data = data.get("packages")
     if not isinstance(packages_data, list) or not packages_data:
         return [], errors + ["packages_required"]
 
     packages: list[ModelPackageManifest] = []
+    seen_package_ids: set[str] = set()
+    seen_candidate_backend: set[tuple[str, str]] = set()
     for index, item in enumerate(packages_data):
         if not isinstance(item, Mapping):
             errors.append(f"package_{index}_not_object")
@@ -482,16 +502,35 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
             "manifest_relative_path",
             "manifest_sha256",
         ]
+        if manifest_kind == "local_inventory":
+            required.extend(["candidate_id", "backend"])
         missing = [field for field in required if field not in item]
         if missing:
             errors.append(f"package_{index}_missing:{','.join(missing)}")
             continue
 
         package_errors: list[str] = []
+        package_id = str(item["package_id"])
         package_path_raw = str(item["package_path"])
         manifest_relative_path = str(item["manifest_relative_path"])
         manifest_sha256 = str(item["manifest_sha256"]).lower()
+        candidate_id = str(item.get("candidate_id", ""))
+        backend = str(item.get("backend", ""))
         package_path = Path(package_path_raw)
+        if not package_id:
+            package_errors.append(f"package_{index}_empty_package_id")
+        elif package_id in seen_package_ids:
+            package_errors.append(f"package_{index}_duplicate_package_id")
+        seen_package_ids.add(package_id)
+        if manifest_kind == "local_inventory":
+            if not candidate_id:
+                package_errors.append(f"package_{index}_empty_candidate_id")
+            if backend not in ALLOWED_BACKENDS:
+                package_errors.append(f"package_{index}_invalid_backend")
+            candidate_key = (candidate_id, backend)
+            if candidate_key in seen_candidate_backend:
+                package_errors.append(f"package_{index}_duplicate_candidate_backend")
+            seen_candidate_backend.add(candidate_key)
         if _is_forbidden_model_identifier(package_path_raw):
             package_errors.append(f"package_{index}_forbidden_model_identifier")
         if is_unsafe_local_path(package_path_raw):
@@ -507,11 +546,14 @@ def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackage
 
         packages.append(
             ModelPackageManifest(
-                package_id=str(item["package_id"]),
-                candidate_id="",
-                backend="",
+                package_id=package_id,
+                candidate_id=candidate_id,
+                backend=backend,
                 model_name="",
                 model_revision="",
+                package_format="",
+                compatible_nadikt_versions=(),
+                compatible_backend_versions=(),
                 package_path=package_path,
                 manifest_relative_path=manifest_relative_path,
                 manifest_sha256=manifest_sha256,
@@ -553,6 +595,7 @@ def validate_model_package_manifest(
         "model_revision",
         "package_format",
         "compatible_nadikt_versions",
+        "compatible_backend_versions",
         "rights_statuses",
         "capabilities",
         "inference_defaults",
@@ -571,6 +614,8 @@ def validate_model_package_manifest(
     critical_files = data["critical_files"]
     rights_statuses = data["rights_statuses"]
     compatible_versions = data["compatible_nadikt_versions"]
+    compatible_backend_versions = data["compatible_backend_versions"]
+    package_format = str(data["package_format"])
 
     if manifest_kind not in {"example", "model_package"}:
         errors.append("invalid_manifest_kind")
@@ -582,6 +627,14 @@ def validate_model_package_manifest(
         errors.append("inference_defaults_not_object")
     if not isinstance(compatible_versions, list) or not all(isinstance(item, str) and item for item in compatible_versions):
         errors.append("compatible_nadikt_versions_invalid")
+    if not isinstance(compatible_backend_versions, list) or not all(isinstance(item, str) and item for item in compatible_backend_versions):
+        errors.append("compatible_backend_versions_invalid")
+    if package_format not in {"synthetic", "ctranslate2-directory", "gigaam-cache-style"}:
+        errors.append("invalid_package_format")
+    if manifest_kind != "example" and backend == "faster-whisper" and package_format != "ctranslate2-directory":
+        errors.append("package_format_backend_mismatch")
+    if manifest_kind != "example" and backend == "gigaam" and package_format != "gigaam-cache-style":
+        errors.append("package_format_backend_mismatch")
     if not isinstance(rights_statuses, Mapping):
         errors.append("rights_statuses_not_object")
         rights_statuses = {}
@@ -613,6 +666,8 @@ def validate_model_package_manifest(
             errors.append(f"critical_file_{file_index}_invalid_size")
         if not role:
             errors.append(f"critical_file_{file_index}_missing_role")
+        if not _role_allowed_for_format(package_format, role):
+            errors.append(f"critical_file_{file_index}_role_not_allowed")
 
     if backend == "gigaam" and isinstance(inference_defaults, Mapping):
         if _missing_required_gigaam_files(str(data["candidate_id"]), inference_defaults, critical_files):
@@ -631,6 +686,9 @@ def validate_model_package_manifest(
             backend=backend,
             model_name=str(data["model_name"]),
             model_revision=str(data["model_revision"]),
+            package_format=package_format,
+            compatible_nadikt_versions=tuple(str(item) for item in compatible_versions),
+            compatible_backend_versions=tuple(str(item) for item in compatible_backend_versions),
             package_path=package_path or Path("."),
             manifest_relative_path=manifest_relative_path,
             manifest_sha256=manifest_sha256,
@@ -694,6 +752,16 @@ def _missing_required_gigaam_files(candidate_id: str, inference_defaults: Mappin
         if isinstance(file_item, Mapping)
     }
     return not required.issubset(declared)
+
+
+def _role_allowed_for_format(package_format: str, role: str) -> bool:
+    if package_format == "synthetic":
+        return role == "synthetic"
+    if package_format == "ctranslate2-directory":
+        return role in {"ctranslate2_weights", "ctranslate2_config", "tokenizer", "vocabulary"}
+    if package_format == "gigaam-cache-style":
+        return role in {"gigaam_checkpoint", "gigaam_tokenizer"}
+    return False
 
 
 def _sha256_file(path: Path) -> str:

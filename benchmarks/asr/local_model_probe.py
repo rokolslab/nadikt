@@ -140,6 +140,7 @@ def _probe_one_package(
         inventory_root,
         package.critical_files,
         package.rights_statuses,
+        package.package_format,
     )
     phases = [ProbePhaseResult("package_validation", integrity.outcome, details={"warning_count": len(integrity.warnings)})]
     if integrity.outcome != ProbeOutcome.PACKAGE_PRESENT.value:

@@ -200,6 +200,7 @@ def _package_manifest(*, package_id: str, candidate_id: str, sha256: str) -> dic
         "model_revision": "test",
         "package_format": "synthetic",
         "compatible_nadikt_versions": ["0.x-prototype"],
+        "compatible_backend_versions": ["synthetic-backend==1"],
         "rights_statuses": {
             "local_evaluation": {"status": "approved", "review_record_id": "local"},
             "redistribution": {"status": "review_required", "review_record_id": "redistribution"},
@@ -208,7 +209,7 @@ def _package_manifest(*, package_id: str, candidate_id: str, sha256: str) -> dic
         },
         "capabilities": {"languages": ["ru"], "punctuation": True, "max_segment_seconds": 25.0, "streaming": False},
         "inference_defaults": {"beam_size": 5, "device": "cpu", "compute_type": "int8"},
-        "critical_files": [{"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": 1, "role": "synthetic"}],
+        "critical_files": [{"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": 24, "role": "synthetic"}],
         "licenses": ["synthetic"],
         "notices": ["synthetic"],
     }

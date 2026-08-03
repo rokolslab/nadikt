@@ -34,6 +34,7 @@ def run_dry_run(dataset_path: Path, models_path: Path) -> dict[str, Any]:
                 models_path.parent,
                 package.critical_files,
                 package.rights_statuses,
+                package.package_format,
             )
             outcomes[result.outcome] += 1
             warnings.update(result.warnings)

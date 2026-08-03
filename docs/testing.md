@@ -154,7 +154,7 @@ Requirements before a measured run:
 2. Confirm the frozen pair is exactly `gigaam-multilingual-220m` and `faster-whisper-small-int8`.
 3. Store real audio/reference files only under controlled storage outside Git.
 4. Validate private bindings against `benchmarks/asr/datasets/coding_pilot.v1.json`.
-5. Validate model package sidecar/inventory and make the model package tree read-only.
+5. Validate model package sidecar/inventory, including trusted index digest, exact package/candidate/backend binding, package format roles, file sizes and SHA-256, then make the model package tree read-only.
 6. Keep writable caches outside the immutable package directory.
 7. Run the WSL2 network evidence positive/negative controls for `qualified-wsl2-default-deny-v1`.
 

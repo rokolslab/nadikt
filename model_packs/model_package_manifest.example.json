@@ -9,6 +9,7 @@
   "model_revision": "example-revision",
   "package_format": "ctranslate2-directory",
   "compatible_nadikt_versions": ["0.x-prototype"],
+  "compatible_backend_versions": ["faster-whisper==1.1.1", "ctranslate2==4.6.0"],
   "rights_statuses": {
     "local_evaluation": {
       "status": "approved",

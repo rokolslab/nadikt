@@ -7,7 +7,7 @@
       "package_id": "faster-whisper-small-int8-local",
       "package_path": "local-packages/faster-whisper-small-int8",
       "manifest_relative_path": "model_package_manifest.example.json",
-      "manifest_sha256": "ac4625433d1c36245a7191b72502e91543312003bc18b3452f0947631a6652b0"
+      "manifest_sha256": "4678a4eba9714e574e8c0fd67c8682460c009cdad8b692fa140723ecbcd5f0d4"
     }
   ]
 }

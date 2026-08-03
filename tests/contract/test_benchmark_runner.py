@@ -116,6 +116,31 @@ class BenchmarkRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "benchmark_result_non_finite_number"):
             payload()
 
+    def test_result_payload_v2_accepts_typed_repeat_sample_metrics(self) -> None:
+        payload = _benchmark_result_v2_payload()
+
+        validate_result_payload(payload)
+
+        rendered = json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        self.assertIn("quality-metrics-v2", rendered)
+        self.assertNotIn("audio_path", rendered)
+
+    def test_result_payload_v2_rejects_unknown_version_unknown_fields_and_nan(self) -> None:
+        payload = _benchmark_result_v2_payload()
+        payload["schema_version"] = 999
+        with self.assertRaisesRegex(ValueError, "benchmark_result_unknown_schema_version"):
+            validate_result_payload(payload)
+
+        payload = _benchmark_result_v2_payload()
+        payload["candidates"][0]["repeat_outcomes"][0]["sample_outcomes"][0]["private_path"] = "/private/audio.wav"
+        with self.assertRaisesRegex(ValueError, "benchmark_result_sample_unknown_fields"):
+            validate_result_payload(payload)
+
+        payload = _benchmark_result_v2_payload()
+        payload["candidates"][0]["repeat_outcomes"][0]["sample_outcomes"][0]["metrics"][0]["value"] = float("nan")
+        with self.assertRaisesRegex(ValueError, "benchmark_result_non_finite_number"):
+            validate_result_payload(payload)
+
     def test_dry_run_writes_safe_aggregate_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -337,6 +362,7 @@ def _write_inventory(root: Path) -> Path:
         "model_revision": "test",
         "package_format": "synthetic",
         "compatible_nadikt_versions": ["0.x-prototype"],
+        "compatible_backend_versions": ["synthetic-backend==1"],
         "rights_statuses": {
             "local_evaluation": {"status": "approved", "review_record_id": "local"},
             "redistribution": {"status": "review_required", "review_record_id": "redistribution"},
@@ -345,7 +371,7 @@ def _write_inventory(root: Path) -> Path:
         },
         "capabilities": {"languages": ["ru"], "punctuation": True, "max_segment_seconds": 25.0, "streaming": False},
         "inference_defaults": {"beam_size": 5, "device": "cpu", "compute_type": "int8"},
-        "critical_files": [{"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": 1, "role": "synthetic"}],
+        "critical_files": [{"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": 24, "role": "synthetic"}],
         "licenses": ["synthetic"],
         "notices": ["synthetic"],
     }
@@ -367,6 +393,60 @@ def _write_inventory(root: Path) -> Path:
     inventory_path = root / "inventory.json"
     inventory_path.write_text(json.dumps(inventory, ensure_ascii=False), encoding="utf-8")
     return inventory_path
+
+
+def _benchmark_result_v2_payload() -> dict[str, object]:
+    return {
+        "schema_version": 2,
+        "run_id": "pilot-1",
+        "run_kind": "coding_pilot",
+        "nadikt_revision": "abc123",
+        "dataset": {"dataset_id": "nadikt-coding-pilot", "dataset_revision": "coding-pilot-v1"},
+        "settings": {"run_profile_id": "coding-pilot-v1"},
+        "measurement": {"backend": "spawned-worker"},
+        "offline_evidence": {"status": "NOT VERIFIED"},
+        "privacy": {"forbidden_payload_count": 0},
+        "validity": {"complete_matrix": True},
+        "outcome": "success",
+        "candidates": [
+            {
+                "candidate_id": "faster-whisper-small-int8",
+                "package_id": "fw-local",
+                "backend": "faster-whisper",
+                "repeats_requested": 3,
+                "repeats_completed": 3,
+                "outcome": "success",
+                "quality_aggregates": {},
+                "resource_aggregates": {},
+                "repeat_outcomes": [
+                    {
+                        "repeat_index": 0,
+                        "outcome": "success",
+                        "phase_outcomes": [{"phase": "load", "outcome": "success", "duration_ms": 10.0}],
+                        "sample_outcomes": [
+                            {
+                                "sample_id": "ru_short_001",
+                                "category": "ru_short",
+                                "scored": True,
+                                "outcome": "success",
+                                "phase_outcomes": [{"phase": "transcribe", "outcome": "success", "duration_ms": 20.0}],
+                                "metrics": [
+                                    {
+                                        "metric_name": "wer",
+                                        "metric_version": "quality-metrics-v2",
+                                        "value": 0.25,
+                                        "numerator": 1,
+                                        "denominator": 4,
+                                        "status": "ok",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
 
 
 def _write_coding_pilot_inventory(root: Path) -> Path:
@@ -394,6 +474,7 @@ def _write_coding_pilot_inventory(root: Path) -> Path:
             "model_revision": "test",
             "package_format": "synthetic",
             "compatible_nadikt_versions": ["0.x-prototype"],
+            "compatible_backend_versions": ["synthetic-backend==1"],
             "rights_statuses": {
                 "local_evaluation": {"status": "approved", "review_record_id": "local"},
                 "redistribution": {"status": "review_required", "review_record_id": "redistribution"},

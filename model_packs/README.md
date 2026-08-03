@@ -29,7 +29,7 @@ Delivery channels и trust model описаны в [`docs/requirements/model_pac
       "package_id": "faster-whisper-small-int8-local",
       "package_path": "local-packages/faster-whisper-small-int8",
       "manifest_relative_path": "model_package_manifest.example.json",
-      "manifest_sha256": "ac4625433d1c36245a7191b72502e91543312003bc18b3452f0947631a6652b0"
+      "manifest_sha256": "4678a4eba9714e574e8c0fd67c8682460c009cdad8b692fa140723ecbcd5f0d4"
     }
   ]
 }
@@ -48,7 +48,9 @@ Immutable package metadata lives in `model_package_manifest.example.json`; real 
 | `manifest_relative_path` | Sidecar manifest path inside the same controlled root |
 | `manifest_sha256` | Expected sidecar digest from installer index or verified release index |
 
-`model_package_manifest.v1` additionally requires backend, candidate/model revisions, Nadikt compatibility, rights statuses, capabilities, inference defaults, licenses/notices and critical files with `relative_path`, `sha256`, `size_bytes` and `role`.
+Real `local_inventory` manifests additionally require `trusted_index_id`, `trusted_index_sha256`, and per-entry `candidate_id`/`backend` so inventory and sidecar metadata are bound before any package root is used.
+
+`model_package_manifest.v1` additionally requires backend, candidate/model revisions, package format, Nadikt/backend compatibility, rights statuses, capabilities, inference defaults, licenses/notices and critical files with `relative_path`, `sha256`, `size_bytes` and approved `role` for that package format.
 
 ## Failure Outcomes
 
@@ -56,6 +58,9 @@ Immutable package metadata lives in `model_package_manifest.example.json`; real 
 |---|---|
 | `missing_package` | `package_path` does not exist locally |
 | `invalid_package_path` | Runtime input is not a local path or is a forbidden model identifier |
+| `invalid_package_root` | `package_path` exists but is not a directory |
+| `size_mismatch` | Critical file size differs from manifest |
+| `invalid_file_role` | Critical file role is not allowed for package format |
 | `checksum_mismatch` | Critical file hash differs from manifest |
 | `missing_critical_file` | Manifest references a required file that is absent |
 | `incompatible_backend` | Backend/package does not match runner contract |

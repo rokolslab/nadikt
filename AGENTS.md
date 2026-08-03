@@ -80,6 +80,7 @@ nadikt/
 | `benchmarks/asr/local_model_probe.py` | Offline local package lifecycle probe runner без transcript/audio paths в JSON summary. |
 | `benchmarks/asr/run_profiles/coding_pilot.v1.json` | Versioned coding-pilot matrix profile: frozen two-candidate pair, repeats, dataset revision, warm-up/scored samples and policy IDs. |
 | `benchmarks/asr/schemas/run_profile.v1.schema.json` | JSON Schema для benchmark run-profile manifests; runtime validation дополнительно выполняется в `benchmarks/asr/manifests.py`. |
+| `benchmarks/asr/schemas/benchmark_result.v2.schema.json` | Immutable schema для publishable coding-pilot aggregate v2 с typed repeat/sample/metric outcomes. |
 | `docs/research/local_asr_offline_package_prototype.md` | Findings package integrity/lifecycle prototype, fake-backed checks и blockers. |
 | `experiments/windows_insertion/README.md` | Команды, safety rules и versioned acceptance matrix disposable spike. |
 | `experiments/windows_insertion/insertion_spike/cli.py` | Ручной двухэтапный capture/deliver harness; не является точкой входа приложения. |

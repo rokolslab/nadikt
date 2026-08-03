@@ -43,6 +43,7 @@ def validate_package_integrity(
     inventory_root: Path,
     critical_files: tuple[Mapping[str, str], ...] = (),
     rights_statuses: Mapping[str, Mapping[str, str]] | None = None,
+    package_format: str = "",
 ) -> PackageIntegrityResult:
     """Validate package path, critical file checksums and license gate metadata."""
 
@@ -56,6 +57,8 @@ def validate_package_integrity(
         return _finish(PackageIntegrityResult("invalid_package_path", package_id))
     if not candidate.exists():
         return _finish(PackageIntegrityResult("missing_package", package_id))
+    if not candidate.is_dir():
+        return _finish(PackageIntegrityResult("invalid_package_root", package_id))
     if not critical_files:
         return _finish(PackageIntegrityResult("missing_critical_file", package_id))
 
@@ -63,8 +66,12 @@ def validate_package_integrity(
     for critical_file in critical_files:
         relative_path = str(critical_file.get("relative_path", ""))
         expected_sha256 = str(critical_file.get("sha256", "")).lower()
+        expected_size = critical_file.get("size_bytes")
+        role = str(critical_file.get("role", ""))
         if is_unsafe_local_path(relative_path) or not relative_path:
             return _finish(PackageIntegrityResult("invalid_package_path", package_id, tuple(prefixes)))
+        if not _role_allowed_for_format(package_format, role):
+            return _finish(PackageIntegrityResult("invalid_file_role", package_id, tuple(prefixes)))
         if not is_valid_sha256(expected_sha256):
             return _finish(PackageIntegrityResult("invalid_checksum", package_id, tuple(prefixes)))
 
@@ -73,6 +80,10 @@ def validate_package_integrity(
             return _finish(PackageIntegrityResult("invalid_package_path", package_id, tuple(prefixes)))
         if not critical_path.is_file():
             return _finish(PackageIntegrityResult("missing_critical_file", package_id, tuple(prefixes)))
+        if isinstance(expected_size, bool) or not isinstance(expected_size, int) or expected_size <= 0:
+            return _finish(PackageIntegrityResult("invalid_file_size", package_id, tuple(prefixes)))
+        if critical_path.stat().st_size != expected_size:
+            return _finish(PackageIntegrityResult("size_mismatch", package_id, tuple(prefixes)))
 
         actual_sha256 = _sha256_file(critical_path)
         prefixes.append(actual_sha256[:CHECKSUM_PREFIX_LENGTH])
@@ -102,9 +113,12 @@ def is_unsafe_local_path(value: str) -> bool:
     """Reject absolute, Windows absolute, UNC and traversal paths."""
 
     normalized = value.replace("\\", "/")
+    lowered = normalized.lower()
     posix_path = PurePosixPath(normalized)
     return (
         ".." in posix_path.parts
+        or "://" in lowered
+        or lowered.startswith(("hf:", "hub:", "huggingface:"))
         or posix_path.is_absolute()
         or PurePosixPath(value).is_absolute()
         or PureWindowsPath(value).is_absolute()
@@ -145,6 +159,18 @@ def _rights_warnings(rights_statuses: Mapping[str, Mapping[str, str]]) -> tuple[
         if status != "approved":
             warnings.append(f"{field}_{status or 'missing'}")
     return tuple(warnings)
+
+
+def _role_allowed_for_format(package_format: str, role: str) -> bool:
+    if not package_format:
+        return True
+    if package_format == "synthetic":
+        return role == "synthetic"
+    if package_format == "ctranslate2-directory":
+        return role in {"ctranslate2_weights", "ctranslate2_config", "tokenizer", "vocabulary"}
+    if package_format == "gigaam-cache-style":
+        return role in {"gigaam_checkpoint", "gigaam_tokenizer"}
+    return False
 
 
 __all__ = [

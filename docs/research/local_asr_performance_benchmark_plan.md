@@ -47,6 +47,7 @@ Benchmark должен измерить качество, задержки и п
 - Evidence: qualified WSL2 default-deny enforcement plus process-tree observation profile `qualified-wsl2-default-deny-v1`.
 - Publication: only schema v2 aggregate with finite metrics, complete matrix, validated privacy/offline evidence and no private paths or payload.
 - Run profile artifact: `benchmarks/asr/run_profiles/coding_pilot.v1.json`; schema: `benchmarks/asr/schemas/run_profile.v1.schema.json`.
+- Result schema artifact: `benchmarks/asr/schemas/benchmark_result.v2.schema.json`; v1 result schema remains unchanged for legacy validation.
 
 Missing model package, hash lock, local-evaluation approval, controlled dataset or qualified offline evidence blocks publication. Poor measured WER/CER/RTF is a valid result; incomplete matrix, schema/privacy failure or `NOT VERIFIED` offline evidence is not publishable.
 

@@ -31,7 +31,7 @@ class ModelPackageIntegrityTest(unittest.TestCase):
                 "synthetic-package",
                 Path("local-packages/synthetic-package"),
                 root,
-                ({"relative_path": "manifest.txt", "sha256": sha256},),
+                ({"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": critical_file.stat().st_size, "role": "synthetic"},),
                 {
                     "local_evaluation": {"status": "approved", "review_record_id": "local"},
                     "redistribution": {"status": "review_required", "review_record_id": "redistribution"},
@@ -79,12 +79,13 @@ class ModelPackageIntegrityTest(unittest.TestCase):
             package_dir = root / "local-packages" / "synthetic-package"
             package_dir.mkdir(parents=True)
             (package_dir / "manifest.txt").write_text("synthetic metadata only\n", encoding="utf-8")
+            critical_file = package_dir / "manifest.txt"
 
             result = validate_local_package(
                 "synthetic-package",
                 Path("local-packages/synthetic-package"),
                 root,
-                ({"relative_path": "manifest.txt", "sha256": "0" * 64},),
+                ({"relative_path": "manifest.txt", "sha256": "0" * 64, "size_bytes": critical_file.stat().st_size, "role": "synthetic"},),
             )
 
         self.assertEqual("checksum_mismatch", result.outcome)
@@ -197,6 +198,87 @@ class ModelPackageIntegrityTest(unittest.TestCase):
         self.assertEqual("invalid_package_path", windows.outcome)
         self.assertEqual("invalid_package_path", windows_drive_relative.outcome)
         self.assertEqual("invalid_package_path", windows_rooted.outcome)
+
+    def test_local_inventory_requires_trusted_index_and_exact_sidecar_binding(self) -> None:
+        inventory = {
+            "schema_version": 1,
+            "manifest_kind": "local_inventory",
+            "inventory_id": "controlled-inventory",
+            "packages": [
+                {
+                    "package_id": "package-a",
+                    "candidate_id": "faster-whisper-small-int8",
+                    "backend": "faster-whisper",
+                    "package_path": "local-packages/package-a",
+                    "manifest_relative_path": "package-a.manifest.json",
+                    "manifest_sha256": "0" * 64,
+                }
+            ],
+        }
+
+        _, errors = validate_model_inventory(inventory)
+
+        self.assertIn("trusted_index_id_required", errors)
+        self.assertIn("trusted_index_sha256_required", errors)
+
+    def test_load_model_inventory_rejects_sidecar_package_id_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest = load_json(ROOT / "model_packs/model_package_manifest.example.json")
+            manifest["package_id"] = "sidecar-package"
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(__import__("json").dumps(manifest), encoding="utf-8")
+            inventory = {
+                "schema_version": 1,
+                "manifest_kind": "local_inventory",
+                "inventory_id": "controlled-inventory",
+                "trusted_index_id": "trusted-index-1",
+                "trusted_index_sha256": "1" * 64,
+                "packages": [
+                    {
+                        "package_id": "inventory-package",
+                        "candidate_id": "faster-whisper-small-int8",
+                        "backend": "faster-whisper",
+                        "package_path": "local-packages/package-a",
+                        "manifest_relative_path": "manifest.json",
+                        "manifest_sha256": _sha256(manifest_path),
+                    }
+                ],
+            }
+            inventory_path = root / "inventory.json"
+            inventory_path.write_text(__import__("json").dumps(inventory), encoding="utf-8")
+
+            packages, errors = load_model_inventory(inventory_path)
+
+        self.assertEqual([], packages)
+        self.assertIn("package_0_package_id_mismatch", errors)
+
+    def test_package_integrity_rejects_size_drift_and_unapproved_role(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package_dir = root / "local-packages" / "synthetic-package"
+            package_dir.mkdir(parents=True)
+            critical_file = package_dir / "manifest.txt"
+            critical_file.write_text("synthetic metadata only\n", encoding="utf-8")
+            sha256 = _sha256(critical_file)
+
+            size_drift = validate_local_package(
+                "synthetic-package",
+                Path("local-packages/synthetic-package"),
+                root,
+                ({"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": critical_file.stat().st_size + 1, "role": "synthetic"},),
+                package_format="synthetic",
+            )
+            bad_role = validate_local_package(
+                "synthetic-package",
+                Path("local-packages/synthetic-package"),
+                root,
+                ({"relative_path": "manifest.txt", "sha256": sha256, "size_bytes": critical_file.stat().st_size, "role": "ctranslate2_weights"},),
+                package_format="synthetic",
+            )
+
+        self.assertEqual("size_mismatch", size_drift.outcome)
+        self.assertEqual("invalid_file_role", bad_role.outcome)
 
 
 def _sha256(path: Path) -> str:

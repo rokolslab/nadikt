@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nadikt.local/schemas/asr/benchmark_result.v2.schema.json",
+  "title": "Nadikt ASR benchmark result v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "run_kind", "nadikt_revision", "dataset", "settings", "candidates", "measurement", "offline_evidence", "privacy", "validity", "outcome"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "run_id": {"type": "string", "minLength": 1},
+    "run_kind": {"type": "string", "minLength": 1},
+    "nadikt_revision": {"type": "string", "minLength": 1},
+    "dataset": {"type": "object"},
+    "settings": {"type": "object"},
+    "measurement": {"type": "object"},
+    "offline_evidence": {"type": "object"},
+    "privacy": {"type": "object"},
+    "validity": {"type": "object"},
+    "outcome": {"type": "string", "enum": ["success", "fail", "not_run", "dry_run", "invalid_inputs", "blocked"]},
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "repeat_outcomes", "quality_aggregates", "resource_aggregates"],
+        "properties": {
+          "candidate_id": {"type": "string", "minLength": 1},
+          "package_id": {"type": "string", "minLength": 1},
+          "backend": {"type": "string", "minLength": 1},
+          "repeats_requested": {"type": "integer", "minimum": 0},
+          "repeats_completed": {"type": "integer", "minimum": 0},
+          "outcome": {"type": "string", "enum": ["success", "fail", "not_run"]},
+          "quality_aggregates": {"type": "object"},
+          "resource_aggregates": {"type": "object"},
+          "repeat_outcomes": {"type": "array", "items": {"$ref": "#/$defs/repeat_outcome"}}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "repeat_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repeat_index", "outcome", "phase_outcomes", "sample_outcomes"],
+      "properties": {
+        "repeat_index": {"type": "integer", "minimum": 0},
+        "outcome": {"type": "string", "enum": ["success", "fail", "not_run"]},
+        "phase_outcomes": {"type": "array", "items": {"$ref": "#/$defs/phase_outcome"}},
+        "sample_outcomes": {"type": "array", "items": {"$ref": "#/$defs/sample_outcome"}}
+      }
+    },
+    "sample_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample_id", "category", "scored", "outcome", "phase_outcomes", "metrics"],
+      "properties": {
+        "sample_id": {"type": "string", "minLength": 1},
+        "category": {"type": "string", "minLength": 1},
+        "scored": {"type": "boolean"},
+        "outcome": {"type": "string", "enum": ["success", "fail", "not_run", "skipped"]},
+        "phase_outcomes": {"type": "array", "items": {"$ref": "#/$defs/phase_outcome"}},
+        "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}}
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric_name", "metric_version", "value", "numerator", "denominator", "status"],
+      "properties": {
+        "metric_name": {"type": "string", "minLength": 1},
+        "metric_version": {"type": "string", "minLength": 1},
+        "value": {"type": "number"},
+        "numerator": {"type": "integer", "minimum": 0},
+        "denominator": {"type": "integer", "minimum": 0},
+        "status": {"type": "string", "minLength": 1}
+      }
+    },
+    "phase_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "outcome", "duration_ms"],
+      "properties": {
+        "phase": {"type": "string", "minLength": 1},
+        "outcome": {"type": "string", "minLength": 1},
+        "duration_ms": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}
