@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+from .offline_evidence import OfflineEvidence, unverified_evidence
 from .privacy_audit import audit_text_artifact
 from .resource_measurement import ResourcePointSample, ResourceReport, ResourceSampler, create_default_resource_sampler
 from .worker_protocol import SUPERVISOR_OUTCOMES, WorkerPhase, WorkerRepeatOutcome, WorkerRequest, WorkerRequestV2, WorkerResult, WorkerResultV2, loads_result, loads_result_v2
@@ -31,6 +32,7 @@ class SupervisorEvent:
 class SupervisedWorkerResult:
     worker_result: WorkerResult | WorkerResultV2
     resource_report: ResourceReport
+    offline_evidence: OfflineEvidence | None = None
     supervisor_outcome: str = "completed"
     timeline: tuple[SupervisorEvent, ...] = ()
 
@@ -40,6 +42,7 @@ class WorkerSupervisor:
     timeout_seconds: float = 120.0
     sample_interval_seconds: float = 0.2
     terminate_grace_seconds: float = 5.0
+    max_capture_bytes: int = 128 * 1024
     sampler_factory: SamplerFactory = create_default_resource_sampler
     popen_factory: PopenFactory = subprocess.Popen
 
@@ -59,6 +62,7 @@ class WorkerSupervisor:
             return SupervisedWorkerResult(
                 _failure_worker_result(request, "fail", "spawn_error"),
                 ResourceReport.unavailable("unavailable", "none", self._interval_ms(), "spawn_error"),
+                unverified_evidence(request.nonce, reason="spawn_error_before_monitor"),
                 "spawn_error",
                 timeline.events,
             )
@@ -92,26 +96,38 @@ class WorkerSupervisor:
                 supervisor_outcome = "killed"
                 timeline.add("kill", "killed")
         resource_report = collector.finish()
+        offline_evidence = unverified_evidence(request.nonce, reason="qualified_monitor_not_configured")
         timeline.add("resource_collection", resource_report.status)
-        audit = audit_text_artifact((stdout or "") + (stderr or ""), canary="NADIKT_CONTROLLED_CANARY")
-        if audit.canary_present or audit.forbidden_payload_count:
+        capture = _bounded_capture(stdout or "", stderr or "", self.max_capture_bytes)
+        stdout = ""
+        stderr = ""
+        if capture.oversized:
+            timeline.add("capture", "protocol_error")
+            return SupervisedWorkerResult(_failure_worker_result(request, "protocol_error", "protocol_error"), resource_report, offline_evidence, "protocol_error", timeline.events)
+        if capture.stderr.strip():
+            timeline.add("capture", "privacy_error")
+            return SupervisedWorkerResult(_failure_worker_result(request, "fail", "privacy_error"), resource_report, offline_evidence, "privacy_error", timeline.events)
+        timeline.add("capture", "completed")
+        audit = audit_text_artifact(capture.stdout + capture.stderr, canary=_worker_canary(request))
+        if audit.has_violation:
             timeline.add("privacy_audit", "privacy_error")
-            return SupervisedWorkerResult(_failure_worker_result(request, "fail", "privacy_error"), resource_report, "privacy_error", timeline.events)
+            return SupervisedWorkerResult(_failure_worker_result(request, "fail", "privacy_error"), resource_report, offline_evidence, "privacy_error", timeline.events)
         timeline.add("privacy_audit", "completed")
         try:
-            result = _loads_worker_result(stdout or "")
+            result = _loads_worker_result(capture.stdout)
         except Exception:
             timeline.add("parse", "protocol_error")
-            return SupervisedWorkerResult(_failure_worker_result(request, "protocol_error", "protocol_error"), resource_report, "protocol_error", timeline.events)
+            return SupervisedWorkerResult(_failure_worker_result(request, "protocol_error", "protocol_error"), resource_report, offline_evidence, "protocol_error", timeline.events)
+        capture = _CapturedText("", "", False)
         if result.nonce != request.nonce:
             timeline.add("nonce", "protocol_error")
-            return SupervisedWorkerResult(_failure_worker_result(request, "protocol_error", "protocol_error"), resource_report, "protocol_error", timeline.events)
+            return SupervisedWorkerResult(_failure_worker_result(request, "protocol_error", "protocol_error"), resource_report, offline_evidence, "protocol_error", timeline.events)
         timeline.add("parse", "completed")
         return_code = getattr(process, "returncode", 0)
         if isinstance(return_code, int) and return_code != 0 and supervisor_outcome == "completed":
             supervisor_outcome = "nonzero_exit"
             timeline.add("exit_status", "nonzero_exit")
-        return SupervisedWorkerResult(result, resource_report, supervisor_outcome, timeline.events)
+        return SupervisedWorkerResult(result, resource_report, offline_evidence, supervisor_outcome, timeline.events)
 
     def _interval_ms(self) -> int:
         return max(1, int(round(self.sample_interval_seconds * 1000)))
@@ -124,6 +140,25 @@ def _loads_worker_result(text: str) -> WorkerResult | WorkerResultV2:
         if str(error) != "invalid_worker_protocol_version":
             raise
     return loads_result(text)
+
+
+@dataclass(frozen=True)
+class _CapturedText:
+    stdout: str
+    stderr: str
+    oversized: bool
+
+
+def _bounded_capture(stdout: str, stderr: str, max_capture_bytes: int) -> _CapturedText:
+    stdout_bytes = stdout.encode("utf-8", errors="replace")
+    stderr_bytes = stderr.encode("utf-8", errors="replace")
+    if len(stdout_bytes) + len(stderr_bytes) > max_capture_bytes:
+        return _CapturedText("", "", True)
+    return _CapturedText(stdout, stderr, False)
+
+
+def _worker_canary(request: WorkerRequest | WorkerRequestV2) -> str:
+    return "NADIKT_CONTROLLED_CANARY_" + request.nonce[:12]
 
 
 def _failure_worker_result(request: WorkerRequest | WorkerRequestV2, worker_status: str, outcome: str) -> WorkerResult | WorkerResultV2:
