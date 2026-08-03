@@ -4,10 +4,13 @@ import contextlib
 import hashlib
 import io
 import json
+import struct
 import sys
 import tempfile
 import unittest
+import wave
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -18,6 +21,47 @@ if str(ROOT) not in sys.path:
 
 from benchmarks.asr.benchmark_results import BenchmarkResult, CandidateAggregate, validate_result_payload
 from benchmarks.asr.benchmark_runner import _aggregate_quality_results, _aggregate_resource_samples, main, run_benchmark
+from benchmarks.asr.worker_protocol import WorkerPhase, WorkerRequest, WorkerResult
+
+
+class _FakeWorkerSupervisor:
+    _RESULTS = ((1, 4, 500.0), (2, 6, 1000.0))
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def run(self, request: WorkerRequest) -> WorkerResult:
+        call_index = len(self.calls)
+        if call_index >= len(self._RESULTS):
+            raise AssertionError("unexpected_fake_supervisor_call")
+        numerator, denominator, duration_ms = self._RESULTS[call_index]
+        self.calls.append(
+            {
+                "call_index": call_index,
+                "candidate_id": request.candidate_id,
+                "package_id": request.package_id,
+                "transcribe_duration_ms": duration_ms,
+            }
+        )
+        return WorkerResult(
+            nonce=request.nonce,
+            package_id=request.package_id,
+            candidate_id=request.candidate_id,
+            backend=request.backend,
+            worker_status="success",
+            phases=(WorkerPhase("transcribe_probe", "success", duration_ms),),
+            quality_metrics={
+                "wer": {
+                    "metric_name": "wer",
+                    "value": numerator / denominator,
+                    "numerator": numerator,
+                    "denominator": denominator,
+                    "status": "ok",
+                    "version": "quality-metrics-v2",
+                }
+            },
+            offline_evidence={"status": "NOT VERIFIED"},
+        )
 
 
 class BenchmarkRunnerTest(unittest.TestCase):
@@ -76,6 +120,76 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertEqual(0, exit_code)
         self.assertIn('"outcome": "dry_run"', printed)
         self.assertNotIn(str(root), printed)
+
+    def test_non_dry_run_persists_fake_supervisor_quality_and_resource_aggregates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            inventory = _write_inventory(root)
+            dataset = _write_dataset(root)
+            bindings = _write_bindings(root, dataset)
+            output = root / "result.json"
+            supervisor = _FakeWorkerSupervisor()
+
+            with patch("benchmarks.asr.benchmark_runner.WorkerSupervisor", return_value=supervisor):
+                result = run_benchmark(
+                    inventory_path=inventory,
+                    dataset_profile_path=dataset,
+                    output_path=output,
+                    private_bindings_path=bindings,
+                    controlled_root=root,
+                    repeats=2,
+                )
+
+            persisted = json.loads(output.read_text(encoding="utf-8"))
+            private_root = str(root)
+
+        candidate = result.candidates[0]
+        self.assertEqual("success", result.outcome)
+        self.assertEqual(2, candidate.repeats_completed)
+        self.assertEqual(
+            [
+                {"call_index": 0, "candidate_id": "candidate-0", "package_id": "package-0", "transcribe_duration_ms": 500.0},
+                {"call_index": 1, "candidate_id": "candidate-0", "package_id": "package-0", "transcribe_duration_ms": 1000.0},
+            ],
+            supervisor.calls,
+        )
+        self.assertEqual(
+            {
+                "wer": {
+                    "metric_name": "wer",
+                    "value": 0.3,
+                    "numerator": 3,
+                    "denominator": 10,
+                    "status": "ok",
+                    "sample_measurements": 2,
+                }
+            },
+            candidate.quality_aggregates,
+        )
+        self.assertEqual(
+            {
+                "sample_measurements": 2,
+                "audio_seconds_avg": 1.0,
+                "audio_seconds_max": 1.0,
+                "transcribe_probe_duration_ms_avg": 750.0,
+                "transcribe_probe_duration_ms_max": 1000.0,
+                "transcribe_probe_rtf_avg": 0.75,
+                "transcribe_probe_rtf_max": 1.0,
+            },
+            candidate.resource_aggregates,
+        )
+        self.assertEqual(candidate.to_json(), persisted["candidates"][0])
+        rendered = json.dumps(persisted, ensure_ascii=False, sort_keys=True)
+        for private_value in (
+            private_root,
+            "controlled synthetic reference",
+            "audio_file",
+            "audio_path",
+            "reference_file",
+            "reference_text",
+            "hypothesis",
+        ):
+            self.assertNotIn(private_value, rendered)
 
     def test_candidate_aggregate_includes_safe_quality_and_resource_counters(self) -> None:
         aggregate = CandidateAggregate(
@@ -186,6 +300,48 @@ def _write_dataset(root: Path) -> Path:
     path = root / "dataset.json"
     path.write_text(json.dumps(dataset, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def _write_bindings(root: Path, dataset: Path) -> Path:
+    audio_dir = root / "audio"
+    reference_dir = root / "references"
+    audio_dir.mkdir()
+    reference_dir.mkdir()
+    audio = audio_dir / "coding_001.wav"
+    reference = reference_dir / "coding_001.txt"
+    _write_wav(audio)
+    reference.write_text("controlled synthetic reference\n", encoding="utf-8")
+    bindings = {
+        "schema_version": 1,
+        "bindings_id": "synthetic-bindings",
+        "public_manifest_sha256": _sha256(dataset),
+        "samples": [
+            {
+                "sample_id": "coding_001",
+                "audio_relative_path": "audio/coding_001.wav",
+                "audio_sha256": _sha256(audio),
+                "reference_relative_path": "references/coding_001.txt",
+                "reference_sha256": _sha256(reference),
+                "rights_status": "approved",
+                "consent_status": "synthetic",
+            }
+        ],
+    }
+    path = root / "bindings.json"
+    path.write_text(json.dumps(bindings, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _write_wav(path: Path) -> None:
+    with wave.open(str(path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        audio.writeframes(struct.pack("<h", 0) * 16000)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 if __name__ == "__main__":
