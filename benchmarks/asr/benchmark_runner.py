@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import wave
 from datetime import UTC, datetime
@@ -16,7 +17,7 @@ from .logging_config import get_logger
 from .manifests import SampleManifest, load_json, load_model_inventory, load_run_profile, validate_dataset_manifest, validate_run_profile_preflight
 from .offline_evidence import unverified_evidence
 from .privacy_audit import audit_text_artifact
-from .resource_measurement import ResourceReport
+from .resource_measurement import ResourceReport, phase_resource_report
 from .worker_protocol import WorkerMetricResult, WorkerRepeatRequest, WorkerRequestV2, WorkerSampleOutcome, WorkerSampleRequest, new_nonce
 from .worker_supervisor import WorkerSupervisor
 
@@ -180,7 +181,7 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
             for sample in result.repeat.samples:
                 if sample.scored:
                     _collect_sample_metrics(quality_results, sample.metrics)
-            resource_samples.append(_resource_sample_v2(tuple(sample for sample in result.repeat.samples if sample.scored), scored_samples, supervised.resource_report))
+            resource_samples.append(_resource_sample_v2(result.repeat.samples, scored_samples, result.repeat.phases, supervised.resource_report))
             if supervised.supervisor_outcome == "completed" and result.worker_status == "success" and result.repeat.outcome == "success":
                 completed += 1
         aggregates.append(
@@ -270,21 +271,46 @@ def _resource_sample(phases: tuple[object, ...], audio_seconds: float, resource_
     return sample
 
 
-def _resource_sample_v2(samples: tuple[WorkerSampleOutcome, ...], sample_requests: tuple[WorkerSampleRequest, ...], resource_report: ResourceReport | None = None) -> dict[str, object]:
+def _resource_sample_v2(samples: tuple[WorkerSampleOutcome, ...], sample_requests: tuple[WorkerSampleRequest, ...], repeat_phases: tuple[object, ...] = (), resource_report: ResourceReport | None = None) -> dict[str, object]:
     durations_by_id = {sample.sample_id: sample.duration_seconds for sample in sample_requests}
-    audio_seconds = sum(float(durations_by_id.get(sample.sample_id, 0.0)) for sample in samples)
+    successful_scored = tuple(sample for sample in samples if sample.scored and sample.outcome == "success")
+    audio_seconds = sum(float(durations_by_id.get(sample.sample_id, 0.0)) for sample in successful_scored)
     transcribe_ms = sum(
         float(phase.duration_ms or 0.0)
-        for sample in samples
+        for sample in successful_scored
         for phase in sample.phases
         if phase.phase == "transcribe"
     )
-    result = {"audio_seconds": audio_seconds, "transcribe_probe_duration_ms": transcribe_ms}
+    sample_rtf_values = []
+    for sample in successful_scored:
+        duration = float(durations_by_id.get(sample.sample_id, 0.0))
+        sample_transcribe_ms = sum(float(phase.duration_ms or 0.0) for phase in sample.phases if phase.phase == "transcribe")
+        if duration > 0:
+            sample_rtf_values.append(sample_transcribe_ms / 1000.0 / duration)
+    result: dict[str, object] = {
+        "audio_seconds": audio_seconds,
+        "scored_sample_success_count": len(successful_scored),
+        "corpus_audio_seconds": audio_seconds,
+        "corpus_transcribe_duration_ms": transcribe_ms,
+        "sample_rtf_values": sample_rtf_values,
+        # v1-compatible aliases retained until result v2 publication replaces aggregate shape.
+        "transcribe_probe_duration_ms": transcribe_ms,
+    }
     if audio_seconds > 0:
-        result["transcribe_probe_rtf"] = transcribe_ms / 1000.0 / audio_seconds
+        corpus_rtf = transcribe_ms / 1000.0 / audio_seconds
+        result["corpus_rtf"] = corpus_rtf
+        result["transcribe_probe_rtf"] = corpus_rtf
     if resource_report is not None:
         result.update(_resource_report_fields(resource_report))
+        result["phase_resource_reports"] = [_phase_report_json(phase.phase, float(phase.duration_ms or 0.0), resource_report) for phase in repeat_phases]
+        for sample in samples:
+            for phase in sample.phases:
+                result.setdefault("phase_resource_reports", []).append(_phase_report_json(phase.phase, float(phase.duration_ms or 0.0), resource_report))
     return result
+
+
+def _phase_report_json(phase_id: str, duration_ms: float, resource_report: ResourceReport) -> dict[str, object]:
+    return phase_resource_report(phase_id, duration_ms, resource_report).to_json()
 
 
 def _split_worker_samples(samples: tuple[object, ...], manifests_by_id: dict[str, SampleManifest], run_profile: object | None) -> tuple[WorkerSampleRequest, tuple[WorkerSampleRequest, ...]]:
@@ -334,6 +360,7 @@ def _resource_report_fields(resource_report: ResourceReport) -> dict[str, object
         "resource_cpu_avg_percent": report["cpu_avg_percent"],
         "resource_cpu_max_percent": report["cpu_max_percent"],
         "resource_peak_rss_mib": report["peak_rss_mib"],
+        "resource_sampled_peak_process_tree_rss_mib": report["peak_rss_mib"],
         "resource_process_count_max": report["process_count_max"],
     }
 
@@ -342,6 +369,8 @@ def _aggregate_resource_samples(samples: list[dict[str, object]]) -> dict[str, o
     if not samples:
         return {}
     aggregates: dict[str, object] = {"sample_measurements": len(samples)}
+    aggregates.update(_aggregate_rtf_samples(samples))
+    aggregates.update(_aggregate_phase_resource_reports(samples))
     generic_numeric_keys = sorted(
         key
         for key in {key for sample in samples for key in sample}
@@ -356,6 +385,43 @@ def _aggregate_resource_samples(samples: list[dict[str, object]]) -> dict[str, o
     if resource_reports:
         aggregates.update(_aggregate_supervisor_resources(resource_reports))
     return aggregates
+
+
+def _aggregate_rtf_samples(samples: list[dict[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    audio_seconds = sum(float(sample["corpus_audio_seconds"]) for sample in samples if isinstance(sample.get("corpus_audio_seconds"), (int, float)))
+    transcribe_ms = sum(float(sample["corpus_transcribe_duration_ms"]) for sample in samples if isinstance(sample.get("corpus_transcribe_duration_ms"), (int, float)))
+    repeat_rtfs = [float(sample["corpus_rtf"]) for sample in samples if isinstance(sample.get("corpus_rtf"), (int, float))]
+    sample_rtfs = [float(value) for sample in samples for value in sample.get("sample_rtf_values", []) if isinstance(value, (int, float))]
+    if audio_seconds > 0:
+        result["corpus_audio_seconds_sum"] = round(audio_seconds, 6)
+        result["corpus_transcribe_duration_ms_sum"] = round(transcribe_ms, 6)
+        result["corpus_rtf"] = round(transcribe_ms / 1000.0 / audio_seconds, 6)
+    if repeat_rtfs:
+        result["repeat_corpus_rtf_n"] = len(repeat_rtfs)
+        result["repeat_corpus_rtf_avg"] = round(sum(repeat_rtfs) / len(repeat_rtfs), 6)
+        result["repeat_corpus_rtf_max"] = round(max(repeat_rtfs), 6)
+    if sample_rtfs:
+        ordered = sorted(sample_rtfs)
+        result["sample_rtf_n"] = len(ordered)
+        result["sample_rtf_median"] = round(_nearest_rank(ordered, 0.5), 6)
+        result["sample_rtf_p95"] = round(_nearest_rank(ordered, 0.95), 6)
+        result["sample_rtf_max"] = round(max(ordered), 6)
+    return result
+
+
+def _aggregate_phase_resource_reports(samples: list[dict[str, object]]) -> dict[str, object]:
+    reports = [report for sample in samples for report in sample.get("phase_resource_reports", []) if isinstance(report, dict)]
+    if not reports:
+        return {}
+    reasons = sorted({str(reason) for report in reports for reason in report.get("missed_reasons", []) if isinstance(reason, str)})
+    return {
+        "phase_resource_report_count": len(reports),
+        "phase_resource_status_ok_count": sum(1 for report in reports if report.get("status") == "ok"),
+        "phase_resource_status_partial_count": sum(1 for report in reports if report.get("status") == "partial"),
+        "phase_resource_status_unavailable_count": sum(1 for report in reports if report.get("status") == "unavailable"),
+        "phase_resource_missed_reasons": reasons,
+    }
 
 
 def _aggregate_supervisor_resources(samples: list[dict[str, object]]) -> dict[str, object]:
@@ -390,6 +456,7 @@ def _aggregate_supervisor_resources(samples: list[dict[str, object]]) -> dict[st
     rss_values = [float(sample["resource_peak_rss_mib"]) for sample in samples if isinstance(sample.get("resource_peak_rss_mib"), (int, float))]
     if rss_values:
         result["resource_peak_rss_mib"] = round(max(rss_values), 3)
+        result["sampled_peak_process_tree_rss_mib"] = round(max(rss_values), 3)
     process_values = [int(sample["resource_process_count_max"]) for sample in samples if isinstance(sample.get("resource_process_count_max"), int)]
     if process_values:
         result["resource_process_count_max"] = max(process_values)
@@ -444,6 +511,13 @@ def _weighted_avg(values: list[tuple[float, float]]) -> float | None:
     if denominator <= 0:
         return None
     return sum(value * weight for value, weight in values if weight > 0) / denominator
+
+
+def _nearest_rank(sorted_values: list[float], percentile: float) -> float:
+    if not sorted_values:
+        return 0.0
+    rank = max(1, int(math.ceil(percentile * len(sorted_values))))
+    return sorted_values[min(rank, len(sorted_values)) - 1]
 
 
 def _numeric_int(value: object) -> int:

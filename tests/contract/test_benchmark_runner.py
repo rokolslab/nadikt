@@ -275,35 +275,17 @@ class BenchmarkRunnerTest(unittest.TestCase):
             },
             candidate.quality_aggregates,
         )
-        self.assertEqual(
-            {
-                "sample_measurements": 2,
-                "audio_seconds_avg": 1.0,
-                "audio_seconds_max": 1.0,
-                "resource_backend": "fake-sampler",
-                "resource_backend_version": "v1",
-                "resource_cpu_avg_percent": 56.666667,
-                "resource_cpu_max_percent": 90.0,
-                "resource_cpu_normalization": "one_logical_cpu_100_percent",
-                "resource_duration_seconds_sum": 1.5,
-                "resource_missed_sample_count": 1,
-                "resource_peak_rss_mib": 257.0,
-                "resource_process_count_max": 2,
-                "resource_report_count": 2,
-                "resource_sample_count": 7,
-                "resource_sample_interval_ms": 200,
-                "resource_status_ok_count": 1,
-                "resource_status_partial_count": 1,
-                "resource_status_unavailable_count": 0,
-                "resource_system_cpu_seconds_sum": 1.0,
-                "resource_user_cpu_seconds_sum": 3.0,
-                "transcribe_probe_duration_ms_avg": 750.0,
-                "transcribe_probe_duration_ms_max": 1000.0,
-                "transcribe_probe_rtf_avg": 0.75,
-                "transcribe_probe_rtf_max": 1.0,
-            },
-            candidate.resource_aggregates,
-        )
+        self.assertEqual(2, candidate.resource_aggregates["sample_measurements"])
+        self.assertEqual(0.75, candidate.resource_aggregates["corpus_rtf"])
+        self.assertEqual(2, candidate.resource_aggregates["repeat_corpus_rtf_n"])
+        self.assertEqual(2, candidate.resource_aggregates["sample_rtf_n"])
+        self.assertEqual(1.0, candidate.resource_aggregates["sample_rtf_p95"])
+        self.assertEqual("fake-sampler", candidate.resource_aggregates["resource_backend"])
+        self.assertEqual(56.666667, candidate.resource_aggregates["resource_cpu_avg_percent"])
+        self.assertEqual(257.0, candidate.resource_aggregates["resource_peak_rss_mib"])
+        self.assertEqual(257.0, candidate.resource_aggregates["sampled_peak_process_tree_rss_mib"])
+        self.assertEqual(10, candidate.resource_aggregates["phase_resource_report_count"])
+        self.assertIn("phase_too_short", candidate.resource_aggregates["phase_resource_missed_reasons"])
         self.assertEqual(candidate.to_json(), persisted["candidates"][0])
         self.assertEqual("fake-sampler:v1", persisted["measurement"]["resource_sampler"])
         rendered = json.dumps(persisted, ensure_ascii=False, sort_keys=True)
@@ -350,6 +332,7 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertIn('"numerator": 3', rendered)
         self.assertIn('"transcribe_probe_rtf_avg": 0.375', rendered)
         self.assertIn('"resource_peak_rss_mib": 120.0', rendered)
+        self.assertIn('"sampled_peak_process_tree_rss_mib": 120.0', rendered)
         self.assertNotIn("reference_text", rendered)
         self.assertNotIn("hypothesis", rendered)
 

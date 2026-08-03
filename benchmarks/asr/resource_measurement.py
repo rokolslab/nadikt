@@ -20,6 +20,7 @@ LOGGER = get_logger(__name__)
 
 CPU_NORMALIZATION = "one_logical_cpu_100_percent"
 RESOURCE_REPORT_VERSION = "resource-report-v1"
+PHASE_RESOURCE_REPORT_VERSION = "phase-resource-report-v1"
 
 
 @dataclass(frozen=True)
@@ -286,6 +287,69 @@ class ResourceReport:
         return report
 
 
+@dataclass(frozen=True)
+class PhaseResourceReport:
+    """Safe phase-level resource coverage summary derived from supervisor samples."""
+
+    phase_id: str
+    status: str
+    duration_ms: float
+    sample_count: int
+    missed_sample_count: int
+    missed_reasons: tuple[str, ...] = field(default_factory=tuple)
+    boundary_coverage: str = "unknown"
+    maximum_gap_ms: float | None = None
+    cpu_avg_percent: float | None = None
+    cpu_max_percent: float | None = None
+    sampled_peak_process_tree_rss_mib: float | None = None
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "version": PHASE_RESOURCE_REPORT_VERSION,
+            "phase_id": self.phase_id,
+            "status": self.status,
+            "duration_ms": round(self.duration_ms, 3),
+            "sample_count": self.sample_count,
+            "missed_sample_count": self.missed_sample_count,
+            "missed_reasons": list(self.missed_reasons),
+            "boundary_coverage": self.boundary_coverage,
+            "maximum_gap_ms": _round_or_none(self.maximum_gap_ms, 3),
+            "cpu_avg_percent": _round_or_none(self.cpu_avg_percent, 6),
+            "cpu_max_percent": _round_or_none(self.cpu_max_percent, 6),
+            "sampled_peak_process_tree_rss_mib": _round_or_none(self.sampled_peak_process_tree_rss_mib, 3),
+        }
+
+
+def phase_resource_report(phase_id: str, duration_ms: float, lifecycle_report: ResourceReport) -> PhaseResourceReport:
+    """Build a bounded phase coverage report without private process identity."""
+
+    duration = max(0.0, duration_ms)
+    reasons: list[str] = []
+    if duration < lifecycle_report.sample_interval_ms:
+        reasons.append("phase_too_short")
+    if lifecycle_report.status == "unavailable":
+        reasons.extend(reason for reason in lifecycle_report.missed_reasons if reason)
+        reasons.append("boundary_missing")
+    status = "ok" if not reasons and lifecycle_report.status == "ok" else "partial"
+    if lifecycle_report.status == "unavailable":
+        status = "unavailable"
+    report = PhaseResourceReport(
+        phase_id=phase_id,
+        status=status,
+        duration_ms=duration,
+        sample_count=lifecycle_report.sample_count if status != "unavailable" else 0,
+        missed_sample_count=lifecycle_report.missed_sample_count + len(reasons),
+        missed_reasons=tuple(dict.fromkeys(reasons)),
+        boundary_coverage="covered" if status == "ok" else "not_covered",
+        maximum_gap_ms=float(lifecycle_report.sample_interval_ms) if lifecycle_report.sample_count else None,
+        cpu_avg_percent=lifecycle_report.cpu_avg_percent if status == "ok" else None,
+        cpu_max_percent=lifecycle_report.cpu_max_percent if status == "ok" else None,
+        sampled_peak_process_tree_rss_mib=lifecycle_report.peak_rss_mib if status != "unavailable" else None,
+    )
+    LOGGER.debug("phase_resource_report_done", extra={"phase_id": phase_id, "status": report.status, "missed_reason_count": len(report.missed_reasons)})
+    return report
+
+
 def create_default_resource_sampler() -> ResourceSampler | None:
     if os.name != "posix":
         return None
@@ -319,11 +383,14 @@ def _peak_kib_to_mib(samples: list[ResourcePointSample]) -> float | None:
 
 __all__ = [
     "CPU_NORMALIZATION",
+    "PHASE_RESOURCE_REPORT_VERSION",
     "ProcessIdentity",
+    "PhaseResourceReport",
     "ResourcePointSample",
     "ResourceReport",
     "ResourceSampler",
     "ResourceSnapshot",
     "create_default_resource_sampler",
     "measure_phase",
+    "phase_resource_report",
 ]

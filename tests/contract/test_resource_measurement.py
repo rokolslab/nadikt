@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from benchmarks.asr.measurement_backends.linux_proc import LinuxProcTreeSampler, sample_process
-from benchmarks.asr.resource_measurement import ProcessIdentity, ResourcePointSample, ResourceReport
+from benchmarks.asr.resource_measurement import ProcessIdentity, ResourcePointSample, ResourceReport, phase_resource_report
 
 
 class ResourceMeasurementTest(unittest.TestCase):
@@ -53,6 +53,26 @@ class ResourceMeasurementTest(unittest.TestCase):
         self.assertIsNone(report.cpu_avg_percent)
         self.assertIsNone(report.peak_rss_mib)
         self.assertEqual(1, report.missed_sample_count)
+
+    def test_phase_resource_report_marks_short_and_unavailable_coverage(self) -> None:
+        lifecycle = ResourceReport.from_samples(
+            backend="fake",
+            backend_version="v1",
+            sample_interval_ms=100,
+            samples=(
+                ResourcePointSample(1.0, ProcessIdentity(123, 1000), 1.0, 0.0, 1024, 1),
+                ResourcePointSample(2.0, ProcessIdentity(123, 1000), 2.0, 0.0, 2048, 1),
+            ),
+        )
+
+        short_phase = phase_resource_report("warmup", 25.0, lifecycle)
+        unavailable_phase = phase_resource_report("load", 250.0, ResourceReport.unavailable("fake", "v1", 100, "sampler_unavailable"))
+
+        self.assertEqual("partial", short_phase.status)
+        self.assertIn("phase_too_short", short_phase.missed_reasons)
+        self.assertEqual("unavailable", unavailable_phase.status)
+        self.assertIn("boundary_missing", unavailable_phase.missed_reasons)
+        self.assertIsNone(unavailable_phase.to_json()["cpu_avg_percent"])
 
     def test_linux_proc_sampler_does_not_read_argv_or_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
