@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
 from benchmarks.asr.benchmark_results import BenchmarkResult, CandidateAggregate, validate_result_payload
 from benchmarks.asr.benchmark_runner import _aggregate_quality_results, _aggregate_resource_samples, main, run_benchmark
 from benchmarks.asr.resource_measurement import ResourceReport
-from benchmarks.asr.worker_protocol import WorkerPhase, WorkerRequest, WorkerResult
+from benchmarks.asr.worker_protocol import WorkerMetricResult, WorkerPhase, WorkerRepeatOutcome, WorkerRequestV2, WorkerResultV2, WorkerSampleOutcome
 from benchmarks.asr.worker_supervisor import SupervisedWorkerResult
 
 
@@ -32,7 +32,7 @@ class _FakeWorkerSupervisor:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    def run(self, request: WorkerRequest) -> SupervisedWorkerResult:
+    def run(self, request: WorkerRequestV2) -> SupervisedWorkerResult:
         call_index = len(self.calls)
         if call_index >= len(self._RESULTS):
             raise AssertionError("unexpected_fake_supervisor_call")
@@ -42,27 +42,34 @@ class _FakeWorkerSupervisor:
                 "call_index": call_index,
                 "candidate_id": request.candidate_id,
                 "package_id": request.package_id,
+                "repeat_index": request.repeat.repeat_index,
+                "warmup_sample_id": request.repeat.warmup_sample.sample_id,
+                "scored_sample_ids": [sample.sample_id for sample in request.repeat.scored_samples],
                 "transcribe_duration_ms": duration_ms,
             }
         )
-        worker_result = WorkerResult(
+        worker_result = WorkerResultV2(
             nonce=request.nonce,
             package_id=request.package_id,
             candidate_id=request.candidate_id,
             backend=request.backend,
             worker_status="success",
-            phases=(WorkerPhase("transcribe_probe", "success", duration_ms),),
-            quality_metrics={
-                "wer": {
-                    "metric_name": "wer",
-                    "value": numerator / denominator,
-                    "numerator": numerator,
-                    "denominator": denominator,
-                    "status": "ok",
-                    "version": "quality-metrics-v2",
-                }
-            },
-            offline_evidence={"status": "NOT VERIFIED"},
+            repeat=WorkerRepeatOutcome(
+                repeat_index=request.repeat.repeat_index,
+                outcome="success",
+                phases=(WorkerPhase("load", "success", 10.0), WorkerPhase("readiness", "success", 0.0), WorkerPhase("close", "success", 1.0)),
+                samples=(
+                    WorkerSampleOutcome(request.repeat.warmup_sample.sample_id, request.repeat.warmup_sample.category, False, "success", (WorkerPhase("warmup", "success", 25.0),), ()),
+                    WorkerSampleOutcome(
+                        request.repeat.scored_samples[0].sample_id,
+                        request.repeat.scored_samples[0].category,
+                        True,
+                        "success",
+                        (WorkerPhase("transcribe", "success", duration_ms),),
+                        (WorkerMetricResult("wer", "quality-metrics-v2", numerator / denominator, numerator, denominator, "ok"),),
+                    ),
+                ),
+            ),
         )
         resource_report = ResourceReport(
             backend="fake-sampler",
@@ -251,8 +258,10 @@ class BenchmarkRunnerTest(unittest.TestCase):
                 {"call_index": 0, "candidate_id": "candidate-0", "package_id": "package-0", "transcribe_duration_ms": 500.0},
                 {"call_index": 1, "candidate_id": "candidate-0", "package_id": "package-0", "transcribe_duration_ms": 1000.0},
             ],
-            supervisor.calls,
+            [{key: value for key, value in call.items() if key in {"call_index", "candidate_id", "package_id", "transcribe_duration_ms"}} for call in supervisor.calls],
         )
+        self.assertEqual([0, 1], [call["repeat_index"] for call in supervisor.calls])
+        self.assertEqual([["coding_001"], ["coding_001"]], [call["scored_sample_ids"] for call in supervisor.calls])
         self.assertEqual(
             {
                 "wer": {

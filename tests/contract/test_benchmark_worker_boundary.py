@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -29,6 +30,7 @@ from benchmarks.asr.worker_protocol import (
     loads_result_v2,
     new_nonce,
 )
+from benchmarks.asr import benchmark_worker
 
 
 class BenchmarkWorkerBoundaryTest(unittest.TestCase):
@@ -229,6 +231,42 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "worker_message_non_finite_number"):
             result.to_worker_json()
 
+    def test_worker_v2_runs_one_repeat_lifecycle_with_warmup_excluded_from_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            warmup_audio = root / "warmup.wav"
+            scored_audio = root / "scored.wav"
+            reference = root / "reference.txt"
+            warmup_audio.write_bytes(b"synthetic")
+            scored_audio.write_bytes(b"synthetic")
+            reference.write_text("hello API", encoding="utf-8")
+            request = WorkerRequestV2(
+                nonce="nonce-v2",
+                package_id="package-a",
+                candidate_id="candidate-a",
+                backend="faster-whisper",
+                package_dir=root / "model",
+                capabilities={"languages": ["ru"]},
+                inference_defaults={},
+                repeat=WorkerRepeatRequest(
+                    repeat_index=2,
+                    warmup_sample=WorkerSampleRequest("warmup_001", "warmup", warmup_audio, None, 1.0, False),
+                    scored_samples=(WorkerSampleRequest("scored_001", "ru_coding_terms", scored_audio, reference, 1.0, True, expected_english_terms=("API",)),),
+                ),
+            )
+            engine = _FakeEngine()
+
+            with patch("benchmarks.asr.benchmark_worker._engine_from_request", return_value=engine):
+                result = benchmark_worker.run_worker(request)
+
+        self.assertIsInstance(result, WorkerResultV2)
+        self.assertEqual("success", result.worker_status)
+        self.assertEqual(["load", "readiness", "close"], [phase.phase for phase in result.repeat.phases])
+        self.assertEqual(["warmup_001", "scored_001"], [sample.sample_id for sample in result.repeat.samples])
+        self.assertEqual([], list(result.repeat.samples[0].metrics))
+        self.assertEqual(["wer", "cer", "english_term_accuracy", "latin_preservation_rate", "coding_term_accuracy"], [metric.metric_name for metric in result.repeat.samples[1].metrics])
+        self.assertEqual(["load", "is_ready", "warmup:warmup_001", "transcribe:scored_001", "close"], engine.events)
+
     def test_local_probe_default_factory_does_not_import_runtime_adapters_in_parent(self) -> None:
         source = (ROOT / "benchmarks/asr/local_model_probe.py").read_text(encoding="utf-8")
 
@@ -239,6 +277,32 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
     def test_integration_real_load_test_is_opt_in(self) -> None:
         path = ROOT / "tests/integration/test_real_local_asr_load.py"
         self.assertIn("NADIKT_REAL_ASR_ASSETS", path.read_text(encoding="utf-8"))
+
+
+class _FakeTranscript:
+    text = "hello API"
+
+
+class _FakeEngine:
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    def load(self, _options: object) -> None:
+        self.events.append("load")
+
+    def is_ready(self) -> bool:
+        self.events.append("is_ready")
+        return True
+
+    def warm_up(self, segment: object) -> None:
+        self.events.append(f"warmup:{segment.sample_id}")
+
+    def transcribe_segment(self, segment: object) -> _FakeTranscript:
+        self.events.append(f"transcribe:{segment.sample_id}")
+        return _FakeTranscript()
+
+    def close(self) -> None:
+        self.events.append("close")
 
 
 if __name__ == "__main__":

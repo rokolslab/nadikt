@@ -10,7 +10,7 @@ from typing import Callable
 
 from .privacy_audit import audit_text_artifact
 from .resource_measurement import ResourcePointSample, ResourceReport, ResourceSampler, create_default_resource_sampler
-from .worker_protocol import WorkerRequest, WorkerResult, loads_result
+from .worker_protocol import WorkerRequest, WorkerRequestV2, WorkerResult, WorkerResultV2, loads_result, loads_result_v2
 
 SamplerFactory = Callable[[], ResourceSampler | None]
 PopenFactory = Callable[..., subprocess.Popen[str]]
@@ -18,7 +18,7 @@ PopenFactory = Callable[..., subprocess.Popen[str]]
 
 @dataclass(frozen=True)
 class SupervisedWorkerResult:
-    worker_result: WorkerResult
+    worker_result: WorkerResult | WorkerResultV2
     resource_report: ResourceReport
 
 
@@ -30,7 +30,7 @@ class WorkerSupervisor:
     sampler_factory: SamplerFactory = create_default_resource_sampler
     popen_factory: PopenFactory = subprocess.Popen
 
-    def run(self, request: WorkerRequest) -> SupervisedWorkerResult:
+    def run(self, request: WorkerRequest | WorkerRequestV2) -> SupervisedWorkerResult:
         process = self.popen_factory(
             [sys.executable, "-m", "benchmarks.asr.benchmark_worker"],
             stdin=subprocess.PIPE,
@@ -57,10 +57,19 @@ class WorkerSupervisor:
         audit = audit_text_artifact((stdout or "") + (stderr or ""), canary="NADIKT_CONTROLLED_CANARY")
         if audit.canary_present or audit.forbidden_payload_count:
             raise ValueError("worker_output_privacy_violation")
-        result = loads_result(stdout or "")
+        result = _loads_worker_result(stdout or "")
         if result.nonce != request.nonce:
             raise ValueError("worker_result_nonce_mismatch")
         return SupervisedWorkerResult(result, resource_report)
+
+
+def _loads_worker_result(text: str) -> WorkerResult | WorkerResultV2:
+    try:
+        return loads_result_v2(text)
+    except ValueError as error:
+        if str(error) != "invalid_worker_protocol_version":
+            raise
+    return loads_result(text)
 
 
 @dataclass

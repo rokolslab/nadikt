@@ -26,12 +26,24 @@ from nadikt.domain.ports.asr import (
 
 from .offline_supervisor import build_unverified_worker_evidence
 from .quality_metrics import cer, coding_term_accuracy, english_term_accuracy, latin_preservation_rate, wer
-from .worker_protocol import WorkerPhase, WorkerRequest, WorkerResult, loads_request
+from .worker_protocol import (
+    WorkerMetricResult,
+    WorkerPhase,
+    WorkerRepeatOutcome,
+    WorkerRequest,
+    WorkerRequestV2,
+    WorkerResult,
+    WorkerResultV2,
+    WorkerSampleOutcome,
+    WorkerSampleRequest,
+    loads_request,
+    loads_request_v2,
+)
 
 
 def main() -> int:
     try:
-        request = loads_request(sys.stdin.read())
+        request = _loads_request(sys.stdin.read())
         result = run_worker(request)
     except Exception:
         result = WorkerResult(
@@ -46,7 +58,13 @@ def main() -> int:
     return 0 if result.worker_status in {"success", "not_run"} else 2
 
 
-def run_worker(request: WorkerRequest) -> WorkerResult:
+def run_worker(request: WorkerRequest | WorkerRequestV2) -> WorkerResult | WorkerResultV2:
+    if isinstance(request, WorkerRequestV2):
+        return _run_worker_v2(request)
+    return _run_worker_v1(request)
+
+
+def _run_worker_v1(request: WorkerRequest) -> WorkerResult:
     phases: list[WorkerPhase] = []
     quality_metrics: dict[str, dict[str, object]] = {}
     status = "success"
@@ -100,6 +118,75 @@ def run_worker(request: WorkerRequest) -> WorkerResult:
     )
 
 
+def _run_worker_v2(request: WorkerRequestV2) -> WorkerResultV2:
+    phases: list[WorkerPhase] = []
+    samples: list[WorkerSampleOutcome] = []
+    status = "success"
+    engine = _engine_from_request(request)
+    try:
+        started = time.monotonic()
+        engine.load(AsrLoadOptions(request.package_dir, request.inference_defaults))
+        phases.append(_phase("load", "success", started))
+        ready = engine.is_ready()
+        phases.append(WorkerPhase("readiness", "success" if ready else "readiness_failed"))
+        if ready:
+            samples.append(_run_sample(engine, request.repeat.warmup_sample, phase_name="warmup"))
+            for sample in request.repeat.scored_samples:
+                samples.append(_run_sample(engine, sample, phase_name="transcribe"))
+        else:
+            status = "fail"
+    except AsrEngineError as error:
+        phases.append(WorkerPhase(error.failure.phase, error.failure.code.value))
+        status = "fail"
+    finally:
+        try:
+            engine.close()
+            phases.append(WorkerPhase("close", "success"))
+        except AsrEngineError as error:
+            phases.append(WorkerPhase("close", error.failure.code.value))
+            status = "fail"
+    if any(sample.outcome != "success" for sample in samples):
+        status = "fail"
+    return WorkerResultV2(
+        nonce=request.nonce,
+        package_id=request.package_id,
+        candidate_id=request.candidate_id,
+        backend=request.backend,
+        worker_status=status,
+        repeat=WorkerRepeatOutcome(
+            repeat_index=request.repeat.repeat_index,
+            outcome="success" if status == "success" else "fail",
+            phases=tuple(phases),
+            samples=tuple(samples),
+        ),
+    )
+
+
+def _run_sample(engine: object, sample: WorkerSampleRequest, *, phase_name: str) -> WorkerSampleOutcome:
+    segment = AsrSegmentInput(
+        sample_id=sample.sample_id,
+        segment_id=0,
+        audio_path=sample.audio_file,
+        start_seconds=0.0,
+        end_seconds=float(sample.duration_seconds),
+        language_profile="ru",
+        segmentation_policy_id="worker-repeat-v2",
+    )
+    try:
+        started = time.monotonic()
+        if sample.scored:
+            transcript = engine.transcribe_segment(segment)
+            phases = (_phase(phase_name, "success", started, segment_id=0),)
+            metrics = _sample_metrics(sample, transcript.text)
+        else:
+            engine.warm_up(segment)
+            phases = (_phase(phase_name, "success", started, segment_id=0),)
+            metrics = ()
+        return WorkerSampleOutcome(sample.sample_id, sample.category, sample.scored, "success", phases, metrics)
+    except AsrEngineError as error:
+        return WorkerSampleOutcome(sample.sample_id, sample.category, sample.scored, "fail", (WorkerPhase(error.failure.phase, error.failure.code.value),), ())
+
+
 def _quality_metrics(request: WorkerRequest, hypothesis: str) -> dict[str, dict[str, object]]:
     if request.reference_file is None:
         return {}
@@ -114,7 +201,21 @@ def _quality_metrics(request: WorkerRequest, hypothesis: str) -> dict[str, dict[
     return {metric.metric_name: metric.to_json() for metric in metrics}
 
 
-def _engine_from_request(request: WorkerRequest) -> object:
+def _sample_metrics(sample: WorkerSampleRequest, hypothesis: str) -> tuple[WorkerMetricResult, ...]:
+    if sample.reference_file is None:
+        return ()
+    reference = sample.reference_file.read_text(encoding="utf-8")
+    metrics = [
+        wer(reference, hypothesis),
+        cer(reference, hypothesis),
+        english_term_accuracy(list(sample.expected_english_terms), hypothesis),
+        latin_preservation_rate(list(sample.expected_english_terms), hypothesis),
+        coding_term_accuracy(list(sample.expected_coding_terms), hypothesis),
+    ]
+    return tuple(WorkerMetricResult(metric.metric_name, metric.version, metric.value, metric.numerator, metric.denominator, metric.status) for metric in metrics)
+
+
+def _engine_from_request(request: WorkerRequest | WorkerRequestV2) -> object:
     metadata = AsrModelMetadata(
         package_id=request.package_id,
         candidate_id=request.candidate_id,
@@ -141,6 +242,15 @@ def _engine_from_request(request: WorkerRequest) -> object:
 
         return GigaAMAsrEngine(metadata)
     raise ValueError("unsupported_backend")
+
+
+def _loads_request(text: str) -> WorkerRequest | WorkerRequestV2:
+    try:
+        return loads_request_v2(text)
+    except ValueError as error:
+        if str(error) != "invalid_worker_protocol_version":
+            raise
+    return loads_request(text)
 
 
 def _phase(phase: str, outcome: str, started: float, *, segment_id: int | None = None) -> WorkerPhase:

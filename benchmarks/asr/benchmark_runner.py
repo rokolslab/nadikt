@@ -17,7 +17,7 @@ from .manifests import SampleManifest, load_json, load_model_inventory, load_run
 from .offline_evidence import unverified_evidence
 from .privacy_audit import audit_text_artifact
 from .resource_measurement import ResourceReport
-from .worker_protocol import WorkerRequest, new_nonce
+from .worker_protocol import WorkerMetricResult, WorkerRepeatRequest, WorkerRequestV2, WorkerSampleOutcome, WorkerSampleRequest, new_nonce
 from .worker_supervisor import WorkerSupervisor
 
 LOGGER = get_logger(__name__)
@@ -75,7 +75,7 @@ def run_benchmark(
             for package in selected
         ]
     else:
-        outcome, aggregates = _run_candidates(selected, binding_result, repeats, inventory_path.parent, samples)
+        outcome, aggregates = _run_candidates(selected, binding_result, repeats, inventory_path.parent, samples, run_profile)
 
     privacy_payload = {
         "model_error_count": len(model_errors),
@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if result.outcome in {"dry_run", "success", "not_run"} else 2
 
 
-def _run_candidates(packages: list[object], binding_result: object | None, repeats: int, inventory_root: Path, sample_manifests: list[SampleManifest]) -> tuple[str, list[CandidateAggregate]]:
+def _run_candidates(packages: list[object], binding_result: object | None, repeats: int, inventory_root: Path, sample_manifests: list[SampleManifest], run_profile: object | None = None) -> tuple[str, list[CandidateAggregate]]:
     if binding_result is None or not getattr(binding_result, "resolved_samples", ()):
         return "not_run", [
             CandidateAggregate(package.candidate_id, package.package_id, package.backend, repeats, 0, "not_run", {"bindings": "not_provided"})
@@ -150,6 +150,7 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
         ]
     samples = tuple(getattr(binding_result, "resolved_samples"))
     manifests_by_id = {sample.sample_id: sample for sample in sample_manifests}
+    warmup_sample, scored_samples = _split_worker_samples(samples, manifests_by_id, run_profile)
     aggregates: list[CandidateAggregate] = []
     supervisor = WorkerSupervisor()
     for package in packages:
@@ -158,33 +159,28 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
         quality_results: dict[str, list[dict[str, object]]] = {}
         resource_samples: list[dict[str, object]] = []
         package_dir = (inventory_root / package.package_path).resolve(strict=False)
-        for _repeat in range(repeats):
-            repeat_success = True
-            for sample in samples:
-                sample_manifest = manifests_by_id.get(sample.sample_id)
-                duration_seconds = _wav_duration_seconds(sample.audio_path)
-                request = WorkerRequest(
-                    nonce=new_nonce(),
-                    package_id=package.package_id,
-                    candidate_id=package.candidate_id,
-                    backend=package.backend,
-                    package_dir=package_dir,
-                    capabilities=package.capabilities,
-                    inference_defaults=package.inference_defaults,
-                    audio_file=sample.audio_path,
-                    reference_file=sample.reference_path,
-                    expected_english_terms=sample_manifest.expected_english_terms if sample_manifest is not None else (),
-                    expected_coding_terms=sample_manifest.expected_coding_terms if sample_manifest is not None else (),
-                    duration_seconds=duration_seconds,
-                )
-                supervised = supervisor.run(request)
-                result = supervised.worker_result
-                phase_outcomes.update({phase.phase: phase.outcome for phase in result.phases})
-                _collect_quality_results(quality_results, result.quality_metrics)
-                resource_samples.append(_resource_sample(result.phases, duration_seconds, supervised.resource_report))
-                if result.worker_status != "success":
-                    repeat_success = False
-            if repeat_success:
+        for repeat_index in range(repeats):
+            request = WorkerRequestV2(
+                nonce=new_nonce(),
+                package_id=package.package_id,
+                candidate_id=package.candidate_id,
+                backend=package.backend,
+                package_dir=package_dir,
+                capabilities=package.capabilities,
+                inference_defaults=package.inference_defaults,
+                critical_checksum_prefixes=tuple(str(item.get("sha256", ""))[:12] for item in package.critical_files if isinstance(item, dict)),
+                repeat=WorkerRepeatRequest(repeat_index=repeat_index, warmup_sample=warmup_sample, scored_samples=scored_samples),
+            )
+            supervised = supervisor.run(request)
+            result = supervised.worker_result
+            if not hasattr(result, "repeat"):
+                raise ValueError("worker_result_v2_required")
+            phase_outcomes.update({phase.phase: phase.outcome for phase in result.repeat.phases})
+            for sample in result.repeat.samples:
+                if sample.scored:
+                    _collect_sample_metrics(quality_results, sample.metrics)
+            resource_samples.append(_resource_sample_v2(tuple(sample for sample in result.repeat.samples if sample.scored), scored_samples, supervised.resource_report))
+            if result.worker_status == "success" and result.repeat.outcome == "success":
                 completed += 1
         aggregates.append(
             CandidateAggregate(
@@ -217,6 +213,11 @@ def _collect_quality_results(target: dict[str, list[dict[str, object]]], metrics
     for metric_name, metric in metrics.items():
         if isinstance(metric, dict):
             target.setdefault(str(metric_name), []).append(metric)
+
+
+def _collect_sample_metrics(target: dict[str, list[dict[str, object]]], metrics: tuple[WorkerMetricResult, ...]) -> None:
+    for metric in metrics:
+        target.setdefault(metric.metric_name, []).append(metric.to_json())
 
 
 def _aggregate_quality_results(metrics: dict[str, list[dict[str, object]]]) -> dict[str, dict[str, object]]:
@@ -266,6 +267,74 @@ def _resource_sample(phases: tuple[object, ...], audio_seconds: float, resource_
             }
         )
     return sample
+
+
+def _resource_sample_v2(samples: tuple[WorkerSampleOutcome, ...], sample_requests: tuple[WorkerSampleRequest, ...], resource_report: ResourceReport | None = None) -> dict[str, object]:
+    durations_by_id = {sample.sample_id: sample.duration_seconds for sample in sample_requests}
+    audio_seconds = sum(float(durations_by_id.get(sample.sample_id, 0.0)) for sample in samples)
+    transcribe_ms = sum(
+        float(phase.duration_ms or 0.0)
+        for sample in samples
+        for phase in sample.phases
+        if phase.phase == "transcribe"
+    )
+    result = {"audio_seconds": audio_seconds, "transcribe_probe_duration_ms": transcribe_ms}
+    if audio_seconds > 0:
+        result["transcribe_probe_rtf"] = transcribe_ms / 1000.0 / audio_seconds
+    if resource_report is not None:
+        result.update(_resource_report_fields(resource_report))
+    return result
+
+
+def _split_worker_samples(samples: tuple[object, ...], manifests_by_id: dict[str, SampleManifest], run_profile: object | None) -> tuple[WorkerSampleRequest, tuple[WorkerSampleRequest, ...]]:
+    if run_profile is not None:
+        warmup_ids = set(getattr(run_profile, "warmup_sample_ids"))
+        scored_categories = set(getattr(run_profile, "scored_categories"))
+        warmup_source = next((sample for sample in samples if sample.sample_id in warmup_ids), samples[0])
+        scored_sources = tuple(sample for sample in samples if manifests_by_id.get(sample.sample_id) is not None and manifests_by_id[sample.sample_id].category in scored_categories)
+    else:
+        warmup_source = samples[0]
+        scored_sources = samples
+    if not scored_sources:
+        scored_sources = samples
+    return (
+        _to_worker_sample(warmup_source, manifests_by_id, scored=False),
+        tuple(_to_worker_sample(sample, manifests_by_id, scored=True) for sample in scored_sources),
+    )
+
+
+def _to_worker_sample(sample: object, manifests_by_id: dict[str, SampleManifest], *, scored: bool) -> WorkerSampleRequest:
+    sample_manifest = manifests_by_id.get(sample.sample_id)
+    return WorkerSampleRequest(
+        sample_id=sample.sample_id,
+        category=sample_manifest.category if sample_manifest is not None else ("scored" if scored else "warmup"),
+        audio_file=sample.audio_path,
+        reference_file=sample.reference_path if scored else None,
+        duration_seconds=_wav_duration_seconds(sample.audio_path),
+        scored=scored,
+        expected_english_terms=sample_manifest.expected_english_terms if sample_manifest is not None else (),
+        expected_coding_terms=sample_manifest.expected_coding_terms if sample_manifest is not None else (),
+    )
+
+
+def _resource_report_fields(resource_report: ResourceReport) -> dict[str, object]:
+    report = resource_report.to_json()
+    return {
+        "resource_backend": report["backend"],
+        "resource_backend_version": report["backend_version"],
+        "resource_status": report["status"],
+        "resource_cpu_normalization": report["cpu_normalization"],
+        "resource_sample_interval_ms": report["sample_interval_ms"],
+        "resource_duration_seconds": report["duration_seconds"],
+        "resource_sample_count": report["sample_count"],
+        "resource_missed_sample_count": report["missed_sample_count"],
+        "resource_user_cpu_seconds": report["user_cpu_seconds"],
+        "resource_system_cpu_seconds": report["system_cpu_seconds"],
+        "resource_cpu_avg_percent": report["cpu_avg_percent"],
+        "resource_cpu_max_percent": report["cpu_max_percent"],
+        "resource_peak_rss_mib": report["peak_rss_mib"],
+        "resource_process_count_max": report["process_count_max"],
+    }
 
 
 def _aggregate_resource_samples(samples: list[dict[str, object]]) -> dict[str, object]:
