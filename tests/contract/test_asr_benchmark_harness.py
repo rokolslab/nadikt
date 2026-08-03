@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from benchmarks.asr.dry_run import run_dry_run
-from benchmarks.asr.manifests import load_json, validate_dataset_manifest, validate_model_inventory
+from benchmarks.asr.manifests import load_json, load_model_inventory, validate_dataset_manifest, validate_model_inventory
 from benchmarks.asr.offline_check import validate_local_package
 from benchmarks.asr.privacy_audit import audit_text_artifact
 from benchmarks.asr.quality_metrics import cer, english_term_accuracy, latin_preservation_rate, wer
@@ -28,12 +28,12 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
         models = load_json(ROOT / "model_packs/model_inventory.example.json")
 
         samples, dataset_errors = validate_dataset_manifest(dataset)
-        packages, model_errors = validate_model_inventory(models)
+        packages, model_errors = load_model_inventory(ROOT / "model_packs/model_inventory.example.json")
 
         self.assertEqual([], dataset_errors)
         self.assertEqual([], model_errors)
         self.assertEqual(6, len(samples))
-        self.assertEqual(4, len(packages))
+        self.assertEqual(1, len(packages))
 
     def test_dataset_rejects_windows_absolute_labels(self) -> None:
         dataset = load_json(ROOT / "benchmarks/asr/datasets/dataset.example.json")
@@ -69,6 +69,7 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
 
     def test_model_inventory_rejects_unsafe_paths(self) -> None:
         models = load_json(ROOT / "model_packs/model_inventory.example.json")
+        models["packages"].append(dict(models["packages"][0]))
         models["packages"][0]["package_path"] = "C:\\Users\\person\\model"
         models["packages"][1]["package_path"] = "../outside-root/model"
 
@@ -79,14 +80,12 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
 
     def test_model_inventory_reports_bad_object_types(self) -> None:
         models = load_json(ROOT / "model_packs/model_inventory.example.json")
-        models["packages"][0]["capabilities"] = "bad"
-        models["packages"][1]["critical_files"] = "bad"
+        models["packages"][0].pop("manifest_relative_path")
 
         packages, errors = validate_model_inventory(models)
 
-        self.assertIn("package_0_capabilities_not_object", errors)
-        self.assertIn("package_1_critical_files_not_list", errors)
-        self.assertEqual(2, len(packages))
+        self.assertIn("package_0_missing:manifest_relative_path", errors)
+        self.assertEqual(0, len(packages))
 
     def test_offline_check_rejects_windows_absolute_path_directly(self) -> None:
         result = validate_local_package(
@@ -106,11 +105,34 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
 
         rendered = json.dumps(summary, ensure_ascii=False)
         self.assertEqual("passed_with_expected_missing_packages", summary["result"])
-        self.assertEqual({"missing_package": 4}, summary["models"]["package_outcomes"])
+        self.assertEqual({"missing_package": 1}, summary["models"]["package_outcomes"])
         self.assertFalse(summary["offline"]["network_attempted"])
         self.assertNotIn("transcript_text", rendered)
         self.assertNotIn("audio_bytes", rendered)
         self.assertNotIn("NADIKT_CONTROLLED_CANARY", rendered)
+
+    def test_dry_run_reports_package_integrity_blockers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package_dir = root / "local-packages" / "corrupted-package"
+            package_dir.mkdir(parents=True)
+            (package_dir / "manifest.txt").write_text("synthetic metadata only\n", encoding="utf-8")
+            models = load_json(ROOT / "model_packs/model_inventory.example.json")
+            models["packages"][0]["package_path"] = "local-packages/corrupted-package"
+            manifest = load_json(ROOT / "model_packs/model_package_manifest.example.json")
+            manifest["critical_files"] = [
+                {"relative_path": "manifest.txt", "sha256": "0" * 64, "size_bytes": 1, "role": "synthetic"}
+            ]
+            manifest_path = root / "model_package_manifest.example.json"
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+            models["packages"][0]["manifest_sha256"] = __import__("hashlib").sha256(manifest_path.read_bytes()).hexdigest()
+            models_path = root / "inventory.json"
+            models_path.write_text(json.dumps(models, ensure_ascii=False), encoding="utf-8")
+
+            summary = run_dry_run(ROOT / "benchmarks/asr/datasets/dataset.example.json", models_path)
+
+        self.assertEqual("completed_with_blockers", summary["result"])
+        self.assertEqual({"checksum_mismatch": 1}, summary["models"]["package_outcomes"])
 
     def test_quality_metrics_use_synthetic_text_only(self) -> None:
         self.assertEqual(0.0, wer("проверить сервер", "проверить сервер").value)

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nadikt.local/schemas/offline_evidence.v1.schema.json",
+  "title": "Nadikt offline evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evidence_id", "mechanism", "mechanism_version", "status", "network_attempted"],
+  "properties": {
+    "evidence_id": {"type": "string", "minLength": 1},
+    "mechanism": {"type": "string", "minLength": 1},
+    "mechanism_version": {"type": "string", "minLength": 1},
+    "status": {"enum": ["PASS", "FAIL", "NOT VERIFIED", "NOT RUN"]},
+    "network_attempted": {"type": "boolean"},
+    "monitor_interval_ms": {"type": "integer", "minimum": 1}
+  }
+}

@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .manifests import load_json, validate_dataset_manifest, validate_model_inventory
+from .manifests import load_json, load_model_inventory, validate_dataset_manifest
 from .offline_check import validate_local_package
 from .privacy_audit import audit_text_artifact
 from .resource_measurement import measure_phase
@@ -22,13 +22,21 @@ def run_dry_run(dataset_path: Path, models_path: Path) -> dict[str, Any]:
         dataset_data = load_json(dataset_path)
         model_data = load_json(models_path)
         samples, dataset_errors = validate_dataset_manifest(dataset_data)
-        packages, model_errors = validate_model_inventory(model_data)
+        packages, model_errors = load_model_inventory(models_path)
 
     outcomes: Counter[str] = Counter()
+    warnings: Counter[str] = Counter()
     with measure_phase("dry_run_package_checks") as package_snapshots:
         for package in packages:
-            result = validate_local_package(package.package_id, package.package_path, models_path.parent)
+            result = validate_local_package(
+                package.package_id,
+                package.package_path,
+                models_path.parent,
+                package.critical_files,
+                package.rights_statuses,
+            )
             outcomes[result.outcome] += 1
+            warnings.update(result.warnings)
 
     created_at = datetime.now(UTC)
     summary = {
@@ -46,6 +54,7 @@ def run_dry_run(dataset_path: Path, models_path: Path) -> dict[str, Any]:
             "package_count": len(packages),
             "validation_errors": model_errors,
             "package_outcomes": dict(sorted(outcomes.items())),
+            "package_warnings": dict(sorted(warnings.items())),
         },
         "offline": {
             "network_attempted": False,
@@ -70,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = run_dry_run(args.dataset, args.models)
     print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if summary["result"] != "invalid_manifests" else 2
+    return 0 if summary["result"] in {"passed", "passed_with_expected_missing_packages", "passed_without_packages"} else 2
 
 
 def _classify_summary(
@@ -84,6 +93,8 @@ def _classify_summary(
         return "passed_with_expected_missing_packages"
     if not outcomes:
         return "passed_without_packages"
+    if any(outcome not in {"package_present", "missing_package"} for outcome in outcomes):
+        return "completed_with_blockers"
     return "passed"
 
 

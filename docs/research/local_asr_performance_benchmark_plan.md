@@ -188,3 +188,23 @@ python3 -m benchmarks.asr.dry_run --dataset benchmarks/asr/datasets/dataset.exam
 Ожидаемый результат: безопасный JSON summary с deterministic missing-package outcomes, без скачивания моделей и без вывода transcript/audio payload.
 
 Для controlled offline acceptance можно выставить `NADIKT_BENCHMARK_OFFLINE_REQUIRED=1`; dry-run отразит это в safe summary, но реальную блокировку исходящей сети всё равно должна обеспечить внешняя ОС/среда запуска.
+
+## Local Package Probe Command
+
+Prototype package lifecycle gate до реального benchmark:
+
+```bash
+python3 -m benchmarks.asr.local_model_probe --models model_packs/model_inventory.example.json --dry-run --offline-required
+```
+
+При наличии real packages вне Git dry-run убирается, а `--audio-file` допускается только для controlled audio outside Git вместе с safe `--audio-label`. JSON summary не должен содержать audio path или transcript payload.
+
+Связанный prototype findings: `docs/research/local_asr_offline_package_prototype.md`.
+
+## Prototype Gate To Real Benchmark
+
+- faster-whisper допускается к real quality benchmark только после успешного local CTranslate2 load/warm-up/close under blocked-network policy и license/package review.
+- GigaAM допускается к следующему package-lifecycle spike только через prefilled SDK cache-style package: `<gigaam_model_name>.ckpt` plus required tokenizer files under the validated package directory passed as `download_root`. A missing file must fail at package validation before `gigaam.load_model` can attempt download.
+- Missing/corrupted packages должны завершаться safe outcome до backend import/load.
+- В памяти одновременно может быть только один backend object; runner обязан закрыть текущий probe перед следующим package.
+- Финальный ASR model остаётся `NOT DECIDED` до quality/resource результатов и Windows baseline checks.

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nadikt.local/schemas/benchmark_result.v1.schema.json",
+  "title": "Nadikt ASR benchmark result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "run_kind", "nadikt_revision", "dataset", "candidates", "measurement", "offline_evidence", "privacy", "outcome"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "run_kind": {"enum": ["coding_pilot", "full_benchmark", "dry_run"]},
+    "nadikt_revision": {"type": "string", "minLength": 1},
+    "dataset": {"type": "object", "additionalProperties": true},
+    "candidates": {"type": "array"},
+    "measurement": {"type": "object", "additionalProperties": true},
+    "offline_evidence": {"type": "object", "additionalProperties": true},
+    "privacy": {"type": "object", "additionalProperties": true},
+    "outcome": {"enum": ["success", "fail", "not_run", "dry_run", "invalid_inputs"]}
+  }
+}

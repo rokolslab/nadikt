@@ -1,0 +1,17 @@
+[project]
+name = "nadikt"
+version = "0.0.0"
+description = "Offline voice dictation utility prototype and ASR benchmark harness"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.nadikt.benchmark]
+python_minor = "3.12"
+platforms = ["linux", "win32"]
+default_locale = "C.UTF-8"
+cpu_threads = 4
+openmp_num_threads = 4
+blas_num_threads = 1
+
+[tool.unittest]
+start-directory = "tests"

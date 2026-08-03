@@ -36,7 +36,16 @@ class AsrFailureCode(str, Enum):
     SEGMENT_TOO_LONG = "segment_too_long"
     CANCELLED = "cancelled"
     TRANSCRIBE_FAILED = "transcribe_failed"
+    WARM_UP_FAILED = "warm_up_failed"
     RESOURCE_RELEASE_FAILED = "resource_release_failed"
+
+
+class AsrEngineError(Exception):
+    """Exception carrying only a typed, privacy-safe ASR failure."""
+
+    def __init__(self, failure: "AsrFailure") -> None:
+        super().__init__(failure.code.value)
+        self.failure = failure
 
 
 @dataclass(frozen=True)
@@ -156,6 +165,41 @@ class AsrSegmentTranscript:
         )
 
 
+@dataclass(frozen=True, repr=False)
+class AsrFailure:
+    """Typed safe ASR failure envelope without raw SDK messages."""
+
+    code: AsrFailureCode
+    phase: str
+    recoverable: bool
+    retryable: bool = False
+
+    def __repr__(self) -> str:
+        return (
+            "AsrFailure("
+            f"code={self.code.value!r}, phase={self.phase!r}, "
+            f"recoverable={self.recoverable!r}, retryable={self.retryable!r})"
+        )
+
+
+@dataclass(frozen=True)
+class AsrTimingEvent:
+    """SDK-neutral lifecycle timing event for safe instrumentation."""
+
+    phase: str
+    duration_ms: float
+    package_id: str
+    segment_id: int | None = None
+    outcome: str = "success"
+
+
+class AsrInferenceObserver(Protocol):
+    """Receives safe lifecycle timing without transcript/audio/SDK payload."""
+
+    def record(self, event: AsrTimingEvent) -> None:
+        """Record an allowlisted timing event."""
+
+
 class AsrEngine(Protocol):
     """Unified ASR engine lifecycle contract."""
 
@@ -168,10 +212,14 @@ class AsrEngine(Protocol):
     def is_ready(self) -> bool:
         """Return whether the engine can accept segment transcription."""
 
-    def warm_up(self) -> None:
-        """Run backend-specific warm-up without exposing transcript payload."""
+    def warm_up(self, segment: AsrSegmentInput, observer: AsrInferenceObserver | None = None) -> None:
+        """Run actual inference on a verified non-scored segment."""
 
-    def transcribe_segment(self, segment: AsrSegmentInput) -> AsrSegmentTranscript:
+    def transcribe_segment(
+        self,
+        segment: AsrSegmentInput,
+        observer: AsrInferenceObserver | None = None,
+    ) -> AsrSegmentTranscript:
         """Transcribe exactly one valid audio segment."""
 
     def cancel(self) -> None:
@@ -193,6 +241,18 @@ def safe_engine_log_context(metadata: AsrModelMetadata) -> dict[str, object]:
     }
 
 
+def safe_timing_log_context(event: AsrTimingEvent) -> dict[str, object]:
+    """Build privacy-safe context for observer events."""
+
+    return {
+        "phase": event.phase,
+        "duration_ms": event.duration_ms,
+        "package_id": event.package_id,
+        "segment_id": event.segment_id,
+        "outcome": event.outcome,
+    }
+
+
 def ensure_segment_within_capabilities(
     segment: AsrSegmentInput,
     capabilities: AsrCapabilities,
@@ -207,11 +267,16 @@ __all__ = [
     "AsrBackend",
     "AsrCapabilities",
     "AsrEngine",
+    "AsrEngineError",
+    "AsrFailure",
     "AsrFailureCode",
+    "AsrInferenceObserver",
     "AsrLoadOptions",
     "AsrModelMetadata",
     "AsrSegmentInput",
     "AsrSegmentTranscript",
+    "AsrTimingEvent",
     "ensure_segment_within_capabilities",
     "safe_engine_log_context",
+    "safe_timing_log_context",
 ]

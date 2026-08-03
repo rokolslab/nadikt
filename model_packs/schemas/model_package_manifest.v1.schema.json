@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nadikt.local/schemas/model_package_manifest.v1.schema.json",
+  "title": "Nadikt Model Package Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_type",
+    "manifest_kind",
+    "package_id",
+    "candidate_id",
+    "backend",
+    "model_name",
+    "model_revision",
+    "package_format",
+    "compatible_nadikt_versions",
+    "rights_statuses",
+    "capabilities",
+    "inference_defaults",
+    "critical_files",
+    "licenses",
+    "notices"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "manifest_type": {"const": "model_package_manifest"},
+    "manifest_kind": {"enum": ["example", "model_package"]},
+    "package_id": {"type": "string", "minLength": 1},
+    "candidate_id": {"type": "string", "minLength": 1},
+    "backend": {"enum": ["gigaam", "faster-whisper", "tone", "other-local"]},
+    "model_name": {"type": "string", "minLength": 1},
+    "model_revision": {"type": "string", "minLength": 1},
+    "package_format": {"type": "string", "minLength": 1},
+    "compatible_nadikt_versions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "rights_statuses": {"$ref": "#/$defs/rights_statuses"},
+    "capabilities": {"type": "object"},
+    "inference_defaults": {"type": "object"},
+    "critical_files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/critical_file"}
+    },
+    "licenses": {"type": "array", "items": {"type": "string"}},
+    "notices": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "rights_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "review_record_id"],
+      "properties": {
+        "status": {"enum": ["approved", "prohibited", "review_required"]},
+        "review_record_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "rights_statuses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["local_evaluation", "redistribution", "bundling", "installer_download"],
+      "properties": {
+        "local_evaluation": {"$ref": "#/$defs/rights_status"},
+        "redistribution": {"$ref": "#/$defs/rights_status"},
+        "bundling": {"$ref": "#/$defs/rights_status"},
+        "installer_download": {"$ref": "#/$defs/rights_status"}
+      }
+    },
+    "critical_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "size_bytes", "role"],
+      "properties": {
+        "relative_path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 1},
+        "role": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

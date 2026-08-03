@@ -1,0 +1,4 @@
+# Nadikt benchmark base profile.
+# No third-party packages are required for dry-run, schema validation and contract tests.
+# Python minor: 3.12
+# Platform: Linux/WSL2 for coding pilot; Windows 10/11 for later baseline.

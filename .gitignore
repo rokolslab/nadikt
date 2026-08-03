@@ -1,0 +1,48 @@
+# Local ASR model packages and vendor caches must stay outside Git.
+local-packages/
+model_packs/local-packages/
+model_packs/**/*.bin
+model_packs/**/*.pt
+model_packs/**/*.pth
+model_packs/**/*.ckpt
+model_packs/**/*.safetensors
+model_packs/**/*.onnx
+model_packs/**/tokenizer.json
+model_packs/**/vocabulary.*
+model_packs/**/merges.txt
+model_packs/**/sentencepiece.*
+model_packs/**/spiece.model
+
+# Hub/runtime caches can contain downloaded weights and tokens.
+.cache/huggingface/
+.cache/torch/
+.cache/ctranslate2/
+huggingface/
+huggingface_cache/
+hf_cache/
+torch_cache/
+ctranslate2_cache/
+
+# Raw ASR benchmark payload and generated probe artifacts.
+benchmarks/asr/runs/
+benchmarks/asr/output/
+benchmarks/asr/outputs/
+benchmarks/asr/**/*.wav
+benchmarks/asr/**/*.mp3
+benchmarks/asr/**/*.flac
+benchmarks/asr/**/*.ogg
+benchmarks/asr/**/*.m4a
+benchmarks/asr/**/*.opus
+benchmarks/asr/**/*transcript*.txt
+benchmarks/asr/**/*reference*.txt
+benchmarks/asr/**/*hypothesis*.txt
+benchmarks/asr/datasets/audio/
+benchmarks/asr/datasets/references/
+benchmarks/asr/datasets/*bindings*.json
+
+# Python local artifacts.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
