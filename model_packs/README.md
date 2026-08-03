@@ -113,6 +113,19 @@ Real lifecycle gate uses a controlled audio file and safe label:
 python3 -m benchmarks.asr.local_model_probe --models <controlled-model-root>/inventory.json --candidate faster-whisper-small-int8 --audio-file <controlled-dataset-root>/audio/warmup_001.wav --audio-label controlled-audio:warmup_001
 ```
 
+For acceptance, run the opt-in integration matrix with a private config outside
+Git after both package manifests are hash-verified:
+
+```powershell
+NADIKT_REAL_ASR_ASSETS=1 NADIKT_REAL_ASR_CONFIG=<private-config.json> python3 -B -m unittest tests.integration.test_real_local_asr_load
+```
+
+The private config points to the controlled inventory, public dataset profile,
+private bindings, controlled dataset root, exact candidate IDs and a safe sample
+ID. Broken declared prerequisites fail with safe `FAIL: ...` reason codes. A
+missing qualified network observer leaves evidence `NOT VERIFIED`; it must not
+be treated as an acceptance pass for publishable coding-pilot results.
+
 ## Candidate Notes
 
 - GigaAM `.transcribe` is limited to short audio; long dictation must go through Nadikt segmentation.

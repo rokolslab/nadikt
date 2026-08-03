@@ -101,6 +101,36 @@ class WorkerSupervisorTest(unittest.TestCase):
         self.assertEqual("fail", result.worker_result.worker_status)
         self.assertNotIn("NADIKT_CONTROLLED_CANARY", rendered)
 
+    def test_stderr_is_privacy_error_and_not_published(self) -> None:
+        request = _request()
+        process = _FakeProcess(WorkerResult(request.nonce, request.package_id, request.candidate_id, request.backend, "success").to_worker_json(), stderr="Traceback (/private/audio.wav)")
+
+        result = WorkerSupervisor(
+            timeout_seconds=1.0,
+            sample_interval_seconds=100.0,
+            sampler_factory=lambda: _FakeSampler(),
+            popen_factory=lambda *_args, **_kwargs: process,
+        ).run(request)
+
+        rendered = str([event.to_json() for event in result.timeline])
+        self.assertEqual("privacy_error", result.supervisor_outcome)
+        self.assertNotIn("/private/audio.wav", rendered)
+
+    def test_oversized_output_is_protocol_error_without_raw_capture(self) -> None:
+        request = _request()
+        process = _FakeProcess("{" + (" " * MAX_MESSAGE_BYTES) + "}")
+
+        result = WorkerSupervisor(
+            timeout_seconds=1.0,
+            sample_interval_seconds=100.0,
+            max_capture_bytes=128,
+            sampler_factory=lambda: _FakeSampler(),
+            popen_factory=lambda *_args, **_kwargs: process,
+        ).run(request)
+
+        self.assertEqual("protocol_error", result.supervisor_outcome)
+        self.assertEqual("protocol_error", result.worker_result.worker_status)
+
     def test_nonzero_exit_is_typed_even_with_parseable_result(self) -> None:
         request = _request()
         process = _FakeProcess(WorkerResult(request.nonce, request.package_id, request.candidate_id, request.backend, "success").to_worker_json(), returncode=2)
@@ -160,8 +190,9 @@ class _FakeSampler:
 class _FakeProcess:
     pid = 123
 
-    def __init__(self, stdout: str, *, returncode: int = 0) -> None:
+    def __init__(self, stdout: str, *, stderr: str = "", returncode: int = 0) -> None:
         self._stdout = stdout
+        self._stderr = stderr
         self.returncode = returncode
         self.input_seen: str | None = None
         self.terminated = False
@@ -173,7 +204,7 @@ class _FakeProcess:
             self.input_seen = input
         self.events.append(f"terminate:{self.terminated}")
         self.events.append(f"kill:{self.killed}")
-        return self._stdout, ""
+        return self._stdout, self._stderr
 
     def terminate(self) -> None:
         self.terminated = True

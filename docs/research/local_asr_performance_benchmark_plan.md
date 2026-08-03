@@ -218,6 +218,30 @@ python3 -m benchmarks.asr.local_model_probe --models model_packs/model_inventory
 
 Связанный prototype findings: `docs/research/local_asr_offline_package_prototype.md`.
 
+## Coding Pilot Real Lifecycle Gate
+
+Перед measured `coding-pilot-v1` operator должен выполнить private opt-in lifecycle
+test на exact frozen pair. Private config не коммитится и содержит только пути к
+controlled storage, candidate IDs и safe sample ID:
+
+```bash
+NADIKT_REAL_ASR_ASSETS=1 NADIKT_REAL_ASR_CONFIG=<private-config.json> python3 -B -m unittest tests.integration.test_real_local_asr_load
+```
+
+Отсутствие opt-in/config/assets даёт `SKIP`. Если prerequisites заявлены, но
+inventory, bindings, package integrity, load, readiness, warm-up,
+short-transcribe, close или process outcome сломаны, тест завершается `FAIL` с
+safe reason code. Если qualified WSL2/Linux observer недоступен при
+`require_offline_evidence_pass=true`, тест также завершается
+`FAIL: offline_evidence_not_verified`; это фиксирует `NOT VERIFIED`, а не
+acceptance pass.
+
+Measured pilot command remains:
+
+```bash
+python3 -m benchmarks.asr.benchmark_runner --inventory <controlled-root>/models/inventory.json --dataset-profile benchmarks/asr/datasets/coding_pilot.v1.json --run-profile benchmarks/asr/run_profiles/coding_pilot.v1.json --private-bindings <controlled-root>/datasets/bindings.json --controlled-root <controlled-root>/datasets --repeats 3 --output <controlled-root>/runs/pilot-ru-coding-private.json
+```
+
 ## Prototype Gate To Real Benchmark
 
 - faster-whisper допускается к real quality benchmark только после успешного local CTranslate2 load/warm-up/close under blocked-network policy и license/package review.

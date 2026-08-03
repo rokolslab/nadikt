@@ -193,6 +193,45 @@ If external default-deny network observation is not active, the publishable
 artifact must keep `offline_evidence.status=NOT VERIFIED` even when load and
 transcription phases succeed.
 
+## Real ASR Lifecycle Opt-In
+
+Real model loading is disabled by default. Without both opt-in variables the
+integration test reports an explicit `SKIP`, not pass/fail:
+
+```powershell
+python3 -B -m unittest tests.integration.test_real_local_asr_load
+```
+
+Private config lives outside Git and contains only local controlled paths:
+
+```json
+{
+  "inventory": "<controlled-root>/models/inventory.json",
+  "dataset_profile": "benchmarks/asr/datasets/coding_pilot.v1.json",
+  "private_bindings": "<controlled-root>/datasets/bindings.json",
+  "controlled_root": "<controlled-root>/datasets",
+  "candidates": ["gigaam-multilingual-220m", "faster-whisper-small-int8"],
+  "sample_id": "warmup_001",
+  "duration_seconds": 1.0,
+  "require_offline_evidence_pass": true
+}
+```
+
+Execution sequence for a real lifecycle gate:
+
+1. Install each candidate interpreter from an offline wheelhouse only: `python3 -m pip install --no-index --find-links <wheelhouse> --require-hashes -r requirements/benchmark/<profile>.lock.txt`.
+2. Validate bindings with the command above and fix any `bindings_invalid` result before ASR load.
+3. Validate both package probes: `python3 -m benchmarks.asr.local_model_probe --models <controlled-root>/models/inventory.json --candidate <candidate-id> --audio-file <controlled-root>/datasets/audio/warmup_001.wav --audio-label controlled-audio:warmup_001 --offline-required`.
+4. Run qualified evidence self-tests for `qualified-wsl2-default-deny-v1`; positive control must observe a synthetic attempt and negative control must observe zero attempts.
+5. Run the opt-in integration test: `NADIKT_REAL_ASR_ASSETS=1 NADIKT_REAL_ASR_CONFIG=<private-config.json> python3 -B -m unittest tests.integration.test_real_local_asr_load`.
+6. Run the measured pilot only after lifecycle and evidence gates pass: `python3 -m benchmarks.asr.benchmark_runner --inventory <controlled-root>/models/inventory.json --dataset-profile benchmarks/asr/datasets/coding_pilot.v1.json --run-profile benchmarks/asr/run_profiles/coding_pilot.v1.json --private-bindings <controlled-root>/datasets/bindings.json --controlled-root <controlled-root>/datasets --repeats 3 --output <controlled-root>/runs/pilot-ru-coding-private.json`.
+7. Validate the private output with schema/privacy gates before copying any sanitized aggregate into `benchmarks/asr/results/`.
+
+If `require_offline_evidence_pass=true` and the observer is unavailable, the
+integration test fails with `FAIL: offline_evidence_not_verified`. That is the
+intended acceptance behavior: successful load/warm-up/transcribe without
+qualified offline evidence is `NOT VERIFIED`, not an acceptance pass.
+
 ## Manual Matrix
 
 Notepad, browser, Word, 1C, elevated target, Windows 10 и real image/file-list

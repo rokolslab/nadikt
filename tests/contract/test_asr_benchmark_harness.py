@@ -183,6 +183,15 @@ class AsrBenchmarkHarnessTest(unittest.TestCase):
         self.assertTrue(result.canary_present)
         self.assertNotIn("NADIKT_SECRET_CANARY", repr(result.safe_log_context()))
 
+    def test_privacy_audit_flags_paths_credentials_and_exceptions(self) -> None:
+        result = audit_text_artifact("Traceback (/private/audio.wav) token=secret")
+
+        self.assertTrue(result.has_violation)
+        self.assertEqual(1, result.private_path_count)
+        self.assertEqual(1, result.credential_marker_count)
+        self.assertEqual(1, result.exception_marker_count)
+        self.assertNotIn("/private/audio.wav", repr(result.safe_log_context()))
+
 
 if __name__ == "__main__":
     unittest.main()
