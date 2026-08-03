@@ -1,6 +1,10 @@
-# Benchmark-only optional faster-whisper profile.
-# Replace REVIEW_REQUIRED hashes with approved wheelhouse hashes before real runs.
-faster-whisper==1.1.1 --hash=REVIEW_REQUIRED
-ctranslate2==4.6.0 --hash=REVIEW_REQUIRED
-tokenizers==0.21.0 --hash=REVIEW_REQUIRED
-numpy==2.2.2 --hash=REVIEW_REQUIRED
+# Benchmark-only faster-whisper profile recipe.
+# Status: NOT_MATERIALIZED
+# Candidate: faster-whisper-small-int8
+# Python/platform ABI: CPython 3.12, Linux/WSL2 x86_64 for the coding pilot.
+# Direct pins to resolve into a complete transitive --require-hashes lock outside the real run:
+# faster-whisper==1.1.1
+# ctranslate2==4.6.0
+# tokenizers==0.21.0
+# numpy==2.2.2
+# Real runs must replace this recipe with a generated lock containing sha256 hashes for every wheel.

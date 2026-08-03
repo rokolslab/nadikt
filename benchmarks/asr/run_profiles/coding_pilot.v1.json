@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "manifest_kind": "benchmark_run_profile",
+  "profile_id": "coding-pilot-v1",
+  "run_kind": "coding_pilot",
+  "ordered_candidate_ids": [
+    "gigaam-multilingual-220m",
+    "faster-whisper-small-int8"
+  ],
+  "min_repeats": 3,
+  "dataset_id": "nadikt-coding-pilot",
+  "dataset_revision": "coding-pilot-v1",
+  "warmup_sample_ids": ["warmup_001"],
+  "scored_categories": ["ru_short", "ru_coding_terms"],
+  "duration_tolerance_seconds": 0.25,
+  "expected_sample_durations": {
+    "warmup_001": 5.0,
+    "ru_short_001": 12.0,
+    "ru_coding_terms_001": 14.0,
+    "ru_coding_terms_002": 16.0,
+    "ru_coding_terms_003": 18.0
+  },
+  "scoring_policy_id": "coding-pilot-scoring-v1",
+  "normalization_policy_id": "asr-raw-punctuation-insensitive-v1",
+  "metric_policy_id": "wer-cer-coding-terms-latin-v1",
+  "percentile_policy_id": "nearest-rank-p95-v1",
+  "thread_policy_id": "cpu-threads-4-openmp-4-blas-1-v1",
+  "launcher_profiles": {
+    "gigaam-multilingual-220m": "gigaam-cpu-python312-wsl2-v1",
+    "faster-whisper-small-int8": "faster-whisper-cpu-int8-python312-wsl2-v1"
+  }
+}

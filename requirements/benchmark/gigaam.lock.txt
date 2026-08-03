@@ -1,6 +1,10 @@
-# Benchmark-only optional GigaAM profile.
-# Replace REVIEW_REQUIRED hashes with approved wheelhouse hashes before real runs.
-gigaam==0.1.0 --hash=REVIEW_REQUIRED
-torch==2.6.0 --hash=REVIEW_REQUIRED
-torchaudio==2.6.0 --hash=REVIEW_REQUIRED
-numpy==2.2.2 --hash=REVIEW_REQUIRED
+# Benchmark-only GigaAM profile recipe.
+# Status: NOT_MATERIALIZED
+# Candidate: gigaam-multilingual-220m
+# Python/platform ABI: CPython 3.12, Linux/WSL2 x86_64 for the coding pilot.
+# Direct pins to resolve into a complete transitive --require-hashes lock outside the real run:
+# gigaam==0.1.0
+# torch==2.6.0
+# torchaudio==2.6.0
+# numpy==2.2.2
+# Real runs must replace this recipe with a generated lock containing sha256 hashes for every wheel.

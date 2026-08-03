@@ -155,6 +155,47 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertIn('"outcome": "dry_run"', printed)
         self.assertNotIn(str(root), printed)
 
+    def test_run_profile_dry_run_rejects_single_candidate_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            inventory = _write_coding_pilot_inventory(root)
+            output = root / "result.json"
+
+            result = run_benchmark(
+                inventory_path=inventory,
+                dataset_profile_path=ROOT / "benchmarks/asr/datasets/coding_pilot.v1.json",
+                output_path=output,
+                candidate="faster-whisper-small-int8",
+                repeats=3,
+                run_profile_path=ROOT / "benchmarks/asr/run_profiles/coding_pilot.v1.json",
+                dry_run=True,
+            )
+
+        self.assertEqual("invalid_inputs", result.outcome)
+        self.assertEqual(1, result.privacy["run_profile_error_count"])
+
+    def test_run_profile_dry_run_persists_ordered_matrix_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            inventory = _write_coding_pilot_inventory(root)
+            output = root / "result.json"
+
+            result = run_benchmark(
+                inventory_path=inventory,
+                dataset_profile_path=ROOT / "benchmarks/asr/datasets/coding_pilot.v1.json",
+                output_path=output,
+                repeats=3,
+                run_profile_path=ROOT / "benchmarks/asr/run_profiles/coding_pilot.v1.json",
+                dry_run=True,
+            )
+
+            persisted = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual("dry_run", result.outcome)
+        self.assertEqual(["gigaam-multilingual-220m", "faster-whisper-small-int8"], [candidate.candidate_id for candidate in result.candidates])
+        self.assertEqual("coding-pilot-v1", persisted["settings"]["run_profile_id"])
+        self.assertEqual("cpu-threads-4-openmp-4-blas-1-v1", persisted["settings"]["thread_policy_id"])
+
     def test_non_dry_run_persists_fake_supervisor_quality_and_resource_aggregates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -323,6 +364,59 @@ def _write_inventory(root: Path) -> Path:
             }
         ],
     }
+    inventory_path = root / "inventory.json"
+    inventory_path.write_text(json.dumps(inventory, ensure_ascii=False), encoding="utf-8")
+    return inventory_path
+
+
+def _write_coding_pilot_inventory(root: Path) -> Path:
+    packages = [
+        ("gigaam-multilingual-220m-local", "gigaam-multilingual-220m", "gigaam", "GigaAM Multilingual 220M", {"gigaam_model_name": "multilingual_ctc"}, ["multilingual_ctc.ckpt"]),
+        ("faster-whisper-small-int8-local", "faster-whisper-small-int8", "faster-whisper", "Whisper small INT8", {"beam_size": 5, "device": "cpu", "compute_type": "int8"}, ["model.bin"]),
+    ]
+    inventory_packages = []
+    for package_id, candidate_id, backend, model_name, inference_defaults, filenames in packages:
+        package_dir = root / "local-packages" / package_id
+        package_dir.mkdir(parents=True)
+        critical_files = []
+        for filename in filenames:
+            critical_file = package_dir / filename
+            critical_file.write_text("synthetic metadata only\n", encoding="utf-8")
+            critical_files.append({"relative_path": filename, "sha256": hashlib.sha256(critical_file.read_bytes()).hexdigest(), "size_bytes": critical_file.stat().st_size, "role": "synthetic"})
+        manifest = {
+            "schema_version": 1,
+            "manifest_type": "model_package_manifest",
+            "manifest_kind": "example",
+            "package_id": package_id,
+            "candidate_id": candidate_id,
+            "backend": backend,
+            "model_name": model_name,
+            "model_revision": "test",
+            "package_format": "synthetic",
+            "compatible_nadikt_versions": ["0.x-prototype"],
+            "rights_statuses": {
+                "local_evaluation": {"status": "approved", "review_record_id": "local"},
+                "redistribution": {"status": "review_required", "review_record_id": "redistribution"},
+                "bundling": {"status": "review_required", "review_record_id": "bundling"},
+                "installer_download": {"status": "review_required", "review_record_id": "download"},
+            },
+            "capabilities": {"languages": ["ru"], "punctuation": True, "max_segment_seconds": 25.0, "streaming": False},
+            "inference_defaults": inference_defaults,
+            "critical_files": critical_files,
+            "licenses": ["synthetic"],
+            "notices": ["synthetic"],
+        }
+        manifest_path = root / f"{package_id}.manifest.json"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        inventory_packages.append(
+            {
+                "package_id": package_id,
+                "package_path": f"local-packages/{package_id}",
+                "manifest_relative_path": manifest_path.name,
+                "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            }
+        )
+    inventory = {"schema_version": 1, "manifest_kind": "example", "inventory_id": "synthetic-coding-pilot-inventory", "packages": inventory_packages}
     inventory_path = root / "inventory.json"
     inventory_path.write_text(json.dumps(inventory, ensure_ascii=False), encoding="utf-8")
     return inventory_path

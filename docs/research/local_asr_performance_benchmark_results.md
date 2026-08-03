@@ -8,6 +8,14 @@
 
 Этот документ предназначен для публикации результатов после запуска protocol из `docs/research/local_asr_performance_benchmark_plan.md`. Не выбирайте модель на основании пустого шаблона или dry-run без реальных packages.
 
+## Coding Pilot Results — run_kind=coding_pilot
+
+Status: `BLOCKED / NOT PUBLISHED`.
+
+Required frozen pair: `gigaam-multilingual-220m` and `faster-whisper-small-int8` with at least three repeats each, separate non-scored warm-up, scored `ru_short` and `ru_coding_terms`, schema v2 aggregate, complete quality denominators and qualified offline evidence.
+
+No publishable coding-pilot result is currently present. Historical file `benchmarks/asr/results/pilot-ru-coding-20260803T121525Z.json` was removed from the publishable results directory because it was schema-invalid legacy evidence: one candidate only, schema v1, `offline_evidence.status=NOT VERIFIED`, and no complete v2 metric matrix. It must not be used for ASR model choice or roadmap completion.
+
 ## Environment
 
 | Поле | Значение |

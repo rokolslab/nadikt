@@ -17,6 +17,7 @@ ALLOWED_TOP_LEVEL_KEYS = {
     "dataset",
     "candidates",
     "measurement",
+    "settings",
     "offline_evidence",
     "privacy",
     "outcome",
@@ -60,6 +61,7 @@ class BenchmarkResult:
     offline_evidence: Mapping[str, object]
     privacy: Mapping[str, object]
     outcome: str
+    settings: Mapping[str, object] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, object]:
         payload = {
@@ -70,6 +72,7 @@ class BenchmarkResult:
             "dataset": dict(self.dataset),
             "candidates": [candidate.to_json() for candidate in self.candidates],
             "measurement": dict(self.measurement),
+            "settings": dict(self.settings),
             "offline_evidence": dict(self.offline_evidence),
             "privacy": dict(self.privacy),
             "outcome": self.outcome,

@@ -39,6 +39,26 @@ GIGAAM_REQUIRED_CACHE_FILES = {
 }
 
 
+@dataclass(frozen=True)
+class RunProfileManifest:
+    profile_id: str
+    run_kind: str
+    ordered_candidate_ids: tuple[str, ...]
+    min_repeats: int
+    dataset_id: str
+    dataset_revision: str
+    warmup_sample_ids: tuple[str, ...]
+    scored_categories: tuple[str, ...]
+    duration_tolerance_seconds: float
+    expected_sample_durations: Mapping[str, float]
+    scoring_policy_id: str
+    normalization_policy_id: str
+    metric_policy_id: str
+    percentile_policy_id: str
+    thread_policy_id: str
+    launcher_profiles: Mapping[str, str]
+
+
 @dataclass(frozen=True, repr=False)
 class SampleManifest:
     sample_id: str
@@ -125,6 +145,123 @@ def load_model_inventory(path: Path) -> tuple[list[ModelPackageManifest], list[s
         extra={"package_count": len(packages), "error_count": len(errors)},
     )
     return packages, errors
+
+
+def load_run_profile(path: Path) -> tuple[RunProfileManifest | None, list[str]]:
+    """Load and validate a safe benchmark run-profile manifest."""
+
+    profile, errors = validate_run_profile(load_json(path))
+    LOGGER.info(
+        "run_profile_validated",
+        extra={"profile_id": profile.profile_id if profile else "invalid", "error_count": len(errors)},
+    )
+    return profile, errors
+
+
+def validate_run_profile(data: Mapping[str, Any]) -> tuple[RunProfileManifest | None, list[str]]:
+    errors: list[str] = []
+    if data.get("schema_version") != 1:
+        errors.append("invalid_schema_version")
+    if data.get("manifest_kind") != "benchmark_run_profile":
+        errors.append("invalid_manifest_kind")
+
+    required = [
+        "profile_id",
+        "run_kind",
+        "ordered_candidate_ids",
+        "min_repeats",
+        "dataset_id",
+        "dataset_revision",
+        "warmup_sample_ids",
+        "scored_categories",
+        "duration_tolerance_seconds",
+        "expected_sample_durations",
+        "scoring_policy_id",
+        "normalization_policy_id",
+        "metric_policy_id",
+        "percentile_policy_id",
+        "thread_policy_id",
+        "launcher_profiles",
+    ]
+    missing = [field for field in required if field not in data]
+    if missing:
+        return None, errors + ["missing:" + ",".join(missing)]
+
+    ordered_candidate_ids = data["ordered_candidate_ids"]
+    warmup_sample_ids = data["warmup_sample_ids"]
+    scored_categories = data["scored_categories"]
+    expected_sample_durations = data["expected_sample_durations"]
+    launcher_profiles = data["launcher_profiles"]
+    min_repeats = data["min_repeats"]
+    duration_tolerance = data["duration_tolerance_seconds"]
+
+    if not _non_empty_string(data["profile_id"]):
+        errors.append("invalid_profile_id")
+    if not _non_empty_string(data["run_kind"]):
+        errors.append("invalid_run_kind")
+    if not isinstance(ordered_candidate_ids, list) or not ordered_candidate_ids:
+        errors.append("ordered_candidate_ids_required")
+        ordered_candidate_ids = []
+    elif not all(_non_empty_string(candidate_id) for candidate_id in ordered_candidate_ids):
+        errors.append("ordered_candidate_ids_invalid")
+    elif len(set(ordered_candidate_ids)) != len(ordered_candidate_ids):
+        errors.append("ordered_candidate_ids_duplicate")
+    if isinstance(min_repeats, bool) or not isinstance(min_repeats, int) or min_repeats < 1:
+        errors.append("invalid_min_repeats")
+        min_repeats = 1
+    if not _non_empty_string(data["dataset_id"]):
+        errors.append("invalid_dataset_id")
+    if not _non_empty_string(data["dataset_revision"]):
+        errors.append("invalid_dataset_revision")
+    if not isinstance(warmup_sample_ids, list) or not warmup_sample_ids or not all(_non_empty_string(item) for item in warmup_sample_ids):
+        errors.append("warmup_sample_ids_invalid")
+        warmup_sample_ids = []
+    if not isinstance(scored_categories, list) or not scored_categories or not all(_non_empty_string(item) for item in scored_categories):
+        errors.append("scored_categories_invalid")
+        scored_categories = []
+    if isinstance(duration_tolerance, bool) or not isinstance(duration_tolerance, (int, float)) or float(duration_tolerance) < 0:
+        errors.append("invalid_duration_tolerance_seconds")
+        duration_tolerance = 0.0
+    if not isinstance(expected_sample_durations, Mapping) or not expected_sample_durations:
+        errors.append("expected_sample_durations_required")
+        expected_sample_durations = {}
+    else:
+        for sample_id, duration in expected_sample_durations.items():
+            if not _non_empty_string(sample_id) or isinstance(duration, bool) or not isinstance(duration, (int, float)) or float(duration) <= 0:
+                errors.append("expected_sample_duration_invalid")
+                break
+    for policy_field in ("scoring_policy_id", "normalization_policy_id", "metric_policy_id", "percentile_policy_id", "thread_policy_id"):
+        if not _non_empty_string(data[policy_field]):
+            errors.append(f"invalid_{policy_field}")
+    if not isinstance(launcher_profiles, Mapping) or set(launcher_profiles) != set(ordered_candidate_ids):
+        errors.append("launcher_profiles_candidate_mismatch")
+        launcher_profiles = {}
+    elif not all(_non_empty_string(value) for value in launcher_profiles.values()):
+        errors.append("launcher_profiles_invalid")
+
+    if errors:
+        return None, errors
+    return (
+        RunProfileManifest(
+            profile_id=str(data["profile_id"]),
+            run_kind=str(data["run_kind"]),
+            ordered_candidate_ids=tuple(str(item) for item in ordered_candidate_ids),
+            min_repeats=int(min_repeats),
+            dataset_id=str(data["dataset_id"]),
+            dataset_revision=str(data["dataset_revision"]),
+            warmup_sample_ids=tuple(str(item) for item in warmup_sample_ids),
+            scored_categories=tuple(str(item) for item in scored_categories),
+            duration_tolerance_seconds=float(duration_tolerance),
+            expected_sample_durations={str(key): float(value) for key, value in expected_sample_durations.items()},
+            scoring_policy_id=str(data["scoring_policy_id"]),
+            normalization_policy_id=str(data["normalization_policy_id"]),
+            metric_policy_id=str(data["metric_policy_id"]),
+            percentile_policy_id=str(data["percentile_policy_id"]),
+            thread_policy_id=str(data["thread_policy_id"]),
+            launcher_profiles={str(key): str(value) for key, value in launcher_profiles.items()},
+        ),
+        [],
+    )
 
 
 def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManifest], list[str]]:
@@ -233,6 +370,61 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
     return samples, errors
 
 
+def validate_run_profile_preflight(
+    *,
+    profile: RunProfileManifest,
+    dataset_data: Mapping[str, Any],
+    samples: list[SampleManifest],
+    candidate_ids: list[str],
+    repeats: int,
+) -> list[str]:
+    """Validate exact run matrix before worker spawn or SDK import."""
+
+    LOGGER.info(
+        "run_profile_preflight_start",
+        extra={"profile_id": profile.profile_id, "candidate_count": len(candidate_ids), "repeats": repeats},
+    )
+    errors: list[str] = []
+    if str(dataset_data.get("dataset_id") or "") != profile.dataset_id:
+        errors.append("run_profile_dataset_id_mismatch")
+    if str(dataset_data.get("dataset_revision") or "") != profile.dataset_revision:
+        errors.append("run_profile_dataset_revision_mismatch")
+    if repeats < profile.min_repeats:
+        errors.append("run_profile_repeats_too_low")
+    if candidate_ids != list(profile.ordered_candidate_ids):
+        errors.append("run_profile_candidate_matrix_mismatch")
+    if len(set(candidate_ids)) != len(candidate_ids):
+        errors.append("run_profile_duplicate_candidate")
+    unknown_candidates = set(candidate_ids).difference(profile.ordered_candidate_ids)
+    if unknown_candidates:
+        errors.append("run_profile_unknown_candidate")
+
+    samples_by_id = {sample.sample_id: sample for sample in samples}
+    categories = {sample.category for sample in samples}
+    missing_warmup = set(profile.warmup_sample_ids).difference(samples_by_id)
+    if missing_warmup:
+        errors.append("run_profile_warmup_missing")
+    missing_categories = set(profile.scored_categories).difference(categories)
+    if missing_categories:
+        errors.append("run_profile_scored_category_missing")
+    missing_durations = set(profile.expected_sample_durations).difference(samples_by_id)
+    if missing_durations:
+        errors.append("run_profile_expected_sample_missing")
+    for sample_id, expected_duration in profile.expected_sample_durations.items():
+        sample = samples_by_id.get(sample_id)
+        if sample is None:
+            continue
+        if abs(sample.duration_seconds - expected_duration) > profile.duration_tolerance_seconds:
+            errors.append("run_profile_duration_drift")
+            break
+
+    LOGGER.info(
+        "run_profile_preflight_done",
+        extra={"profile_id": profile.profile_id, "error_count": len(errors)},
+    )
+    return errors
+
+
 def _validate_expected_coding_terms(sample_index: int, terms: list[object]) -> list[str]:
     errors: list[str] = []
     seen: set[str] = set()
@@ -264,6 +456,10 @@ def _validate_expected_coding_terms(sample_index: int, terms: list[object]) -> l
         if not isinstance(require_latin, bool):
             errors.append(f"sample_{sample_index}_term_{term_index}_invalid_require_latin")
     return errors
+
+
+def _non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackageManifest], list[str]]:

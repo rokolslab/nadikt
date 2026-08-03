@@ -36,6 +36,20 @@ Benchmark должен измерить качество, задержки и п
 - выбор финальной MVP-модели без фактических измерений, licensing review, packaging review и Windows-проверки;
 - постоянное хранение пользовательских аудио или transcript payload.
 
+## Coding Pilot Scope
+
+Первый real run profile `coding-pilot-v1` является отдельным pilot, а не полным benchmark из этого документа.
+
+- Frozen pair: `gigaam-multilingual-220m` и `faster-whisper-small-int8`.
+- Dataset categories: отдельный non-scored `warmup`, scored `ru_short` и `ru_coding_terms`.
+- Repeats: минимум три независимых repeat на candidate.
+- Environment: отдельный per-candidate interpreter profile, complete transitive hash lock, offline wheelhouse install with `--no-index --require-hashes`.
+- Evidence: qualified WSL2 default-deny enforcement plus process-tree observation profile `qualified-wsl2-default-deny-v1`.
+- Publication: only schema v2 aggregate with finite metrics, complete matrix, validated privacy/offline evidence and no private paths or payload.
+- Run profile artifact: `benchmarks/asr/run_profiles/coding_pilot.v1.json`; schema: `benchmarks/asr/schemas/run_profile.v1.schema.json`.
+
+Missing model package, hash lock, local-evaluation approval, controlled dataset or qualified offline evidence blocks publication. Poor measured WER/CER/RTF is a valid result; incomplete matrix, schema/privacy failure or `NOT VERIFIED` offline evidence is not publishable.
+
 ## Кандидаты
 
 | Candidate ID | Назначение | Runtime input | Обязательные условия |
@@ -124,6 +138,8 @@ Offline acceptance выполняется после подготовки лок
 8. Просмотреть stdout/stderr, logs, JSON/CSV results и crash artifacts на отсутствие audio/transcript/user dictionary payload.
 
 Run считается failed, если runtime пытается открыть сеть, принимает Hub model name как package path или пишет sensitive payload в artifact.
+
+For `coding-pilot-v1`, `offline_evidence.status=NOT VERIFIED` is a blocker for publication even if local load and transcription phases report success.
 
 ## Privacy Rules
 

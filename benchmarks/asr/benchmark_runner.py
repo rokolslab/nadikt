@@ -13,7 +13,7 @@ from typing import Any
 from .benchmark_results import BenchmarkResult, CandidateAggregate, write_result_atomic
 from .dataset_bindings import validate_dataset_bindings
 from .logging_config import get_logger
-from .manifests import SampleManifest, load_json, load_model_inventory, validate_dataset_manifest
+from .manifests import SampleManifest, load_json, load_model_inventory, load_run_profile, validate_dataset_manifest, validate_run_profile_preflight
 from .offline_evidence import unverified_evidence
 from .privacy_audit import audit_text_artifact
 from .resource_measurement import ResourceReport
@@ -34,20 +34,39 @@ def run_benchmark(
     candidate: str | None = None,
     repeats: int = 3,
     run_kind: str = "coding_pilot",
+    run_profile_path: Path | None = None,
     dry_run: bool = False,
 ) -> BenchmarkResult:
     LOGGER.info("benchmark_runner_start", extra={"run_kind": run_kind, "candidate": candidate or "all", "repeats": repeats, "dry_run": dry_run})
     packages, model_errors = load_model_inventory(inventory_path)
     dataset_data = load_json(dataset_profile_path)
     samples, dataset_errors = validate_dataset_manifest(dataset_data)
+    run_profile = None
+    profile_errors: list[str] = []
+    if run_profile_path is not None:
+        run_profile, profile_errors = load_run_profile(run_profile_path)
     binding_result = None
     if private_bindings_path is not None and controlled_root is not None:
         binding_result = validate_dataset_bindings(dataset_profile_path, private_bindings_path, controlled_root)
 
     selected = [package for package in packages if candidate is None or package.candidate_id == candidate]
+    if run_profile is not None and candidate is None:
+        package_by_candidate = {package.candidate_id: package for package in selected}
+        selected = [package_by_candidate[candidate_id] for candidate_id in run_profile.ordered_candidate_ids if candidate_id in package_by_candidate]
+        profile_errors.extend(
+            validate_run_profile_preflight(
+                profile=run_profile,
+                dataset_data=dataset_data,
+                samples=samples,
+                candidate_ids=[package.candidate_id for package in selected],
+                repeats=repeats,
+            )
+        )
+    elif run_profile is not None:
+        profile_errors.append("run_profile_disallows_single_candidate_filter")
     run_id = "pilot-ru-coding-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     aggregates: list[CandidateAggregate] = []
-    if model_errors or dataset_errors or (binding_result is not None and binding_result.errors):
+    if model_errors or dataset_errors or profile_errors or (binding_result is not None and binding_result.errors):
         outcome = "invalid_inputs"
     elif dry_run:
         outcome = "dry_run"
@@ -61,6 +80,7 @@ def run_benchmark(
     privacy_payload = {
         "model_error_count": len(model_errors),
         "dataset_error_count": len(dataset_errors),
+        "run_profile_error_count": len(profile_errors),
         "binding_error_count": len(binding_result.errors) if binding_result is not None else 0,
     }
     evidence = unverified_evidence(run_id).to_json()
@@ -76,6 +96,7 @@ def run_benchmark(
         },
         candidates=tuple(aggregates),
         measurement={"backend": "spawned-worker", "repeats_requested": repeats, "resource_sampler": _measurement_resource_sampler(aggregates)},
+        settings=_safe_settings(run_profile, candidate, repeats),
         offline_evidence=evidence,
         privacy=privacy_payload,
         outcome=outcome,
@@ -98,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate")
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--run-kind", default="coding_pilot")
+    parser.add_argument("--run-profile", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -113,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         candidate=args.candidate,
         repeats=args.repeats,
         run_kind=args.run_kind,
+        run_profile_path=args.run_profile,
         dry_run=args.dry_run,
     )
     print(json.dumps(result.to_json(), ensure_ascii=False, indent=2, sort_keys=True))
@@ -315,6 +338,28 @@ def _measurement_resource_sampler(aggregates: list[CandidateAggregate]) -> str:
     if not values:
         return "unavailable"
     return values[0] if len(set(values)) == 1 else "mixed"
+
+
+def _safe_settings(run_profile: object | None, candidate: str | None, repeats: int) -> dict[str, object]:
+    settings: dict[str, object] = {
+        "requested_candidate_filter": candidate or "all",
+        "requested_repeats": repeats,
+    }
+    if run_profile is not None:
+        settings["run_profile_id"] = getattr(run_profile, "profile_id")
+        settings["run_kind"] = getattr(run_profile, "run_kind")
+        settings["ordered_candidate_ids"] = list(getattr(run_profile, "ordered_candidate_ids"))
+        settings["min_repeats"] = getattr(run_profile, "min_repeats")
+        settings["dataset_revision"] = getattr(run_profile, "dataset_revision")
+        settings["scored_categories"] = list(getattr(run_profile, "scored_categories"))
+        settings["warmup_sample_ids"] = list(getattr(run_profile, "warmup_sample_ids"))
+        settings["scoring_policy_id"] = getattr(run_profile, "scoring_policy_id")
+        settings["normalization_policy_id"] = getattr(run_profile, "normalization_policy_id")
+        settings["metric_policy_id"] = getattr(run_profile, "metric_policy_id")
+        settings["percentile_policy_id"] = getattr(run_profile, "percentile_policy_id")
+        settings["thread_policy_id"] = getattr(run_profile, "thread_policy_id")
+        settings["launcher_profiles"] = dict(getattr(run_profile, "launcher_profiles"))
+    return settings
 
 
 def _compatible_value(samples: list[dict[str, object]], key: str) -> object:

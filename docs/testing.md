@@ -105,8 +105,8 @@ proxy/credential settings.
 
 Real ASR run должен использовать заранее подготовленный environment:
 
-1. Materialize selected backend lock under `requirements/benchmark/` with exact approved wheel hashes.
-2. Build/install from offline wheelhouse only.
+1. Materialize selected backend lock under `requirements/benchmark/` with exact approved wheel hashes and no `Status: NOT_MATERIALIZED` marker.
+2. Build/install from offline wheelhouse only with `--no-index --require-hashes`.
 3. Set concrete thread defaults, for example `cpu_threads=4`, `OMP_NUM_THREADS=4`, `OPENBLAS_NUM_THREADS=1`, `MKL_NUM_THREADS=1`.
 4. Run fingerprint and store only safe JSON fields with benchmark results.
 5. Do not run `pip install`, dependency resolution or network access inside the benchmark run.
@@ -150,11 +150,13 @@ Coding-pilot real runs use controlled storage outside Git:
 
 Requirements before a measured run:
 
-1. Build/install the benchmark venv from the controlled wheelhouse, not from an online index.
-2. Store real audio/reference files only under controlled storage outside Git.
-3. Validate private bindings against `benchmarks/asr/datasets/coding_pilot.v1.json`.
-4. Validate model package sidecar/inventory and make the model package tree read-only.
-5. Keep writable caches outside the immutable package directory.
+1. Build/install each candidate benchmark venv from its controlled wheelhouse, not from an online index.
+2. Confirm the frozen pair is exactly `gigaam-multilingual-220m` and `faster-whisper-small-int8`.
+3. Store real audio/reference files only under controlled storage outside Git.
+4. Validate private bindings against `benchmarks/asr/datasets/coding_pilot.v1.json`.
+5. Validate model package sidecar/inventory and make the model package tree read-only.
+6. Keep writable caches outside the immutable package directory.
+7. Run the WSL2 network evidence positive/negative controls for `qualified-wsl2-default-deny-v1`.
 
 Reference validation command:
 
@@ -177,11 +179,15 @@ First lifecycle gate:
 python3 -m benchmarks.asr.local_model_probe --models <controlled-root>/models/inventory.json --candidate faster-whisper-small-int8 --audio-file <controlled-root>/datasets/audio/warmup_001.wav --audio-label controlled-audio:warmup_001
 ```
 
-First coding-pilot runner command:
+Coding-pilot matrix preflight/dry-run command:
 
 ```powershell
-python3 -m benchmarks.asr.benchmark_runner --inventory <controlled-root>/models/inventory.json --dataset-profile benchmarks/asr/datasets/coding_pilot.v1.json --private-bindings <controlled-root>/datasets/bindings.json --controlled-root <controlled-root>/datasets --candidate faster-whisper-small-int8 --repeats 3 --output <controlled-root>/runs/pilot-ru-coding-first.json
+python3 -m benchmarks.asr.benchmark_runner --inventory <controlled-root>/models/inventory.json --dataset-profile benchmarks/asr/datasets/coding_pilot.v1.json --run-profile benchmarks/asr/run_profiles/coding_pilot.v1.json --private-bindings <controlled-root>/datasets/bindings.json --controlled-root <controlled-root>/datasets --repeats 3 --dry-run --output <controlled-root>/runs/pilot-ru-coding-preflight.json
 ```
+
+The run profile rejects single-candidate filters, missing/extra/duplicate candidates,
+repeats below 3, dataset revision drift and duration drift before worker spawn. The
+measured runner must use the same `--run-profile` and complete both candidates.
 
 If external default-deny network observation is not active, the publishable
 artifact must keep `offline_evidence.status=NOT VERIFIED` even when load and

@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from benchmarks.asr.dataset_bindings import validate_dataset_bindings
-from benchmarks.asr.manifests import load_json, validate_dataset_manifest
+from benchmarks.asr.manifests import load_json, load_run_profile, validate_dataset_manifest, validate_run_profile_preflight
 
 
 class RuCodingTermsDatasetTest(unittest.TestCase):
@@ -41,6 +41,44 @@ class RuCodingTermsDatasetTest(unittest.TestCase):
         self.assertIn("warmup", categories)
         self.assertIn("ru_short", categories)
         self.assertIn("ru_coding_terms", categories)
+
+    def test_coding_pilot_run_profile_requires_exact_matrix_and_durations(self) -> None:
+        profile, profile_errors = load_run_profile(ROOT / "benchmarks/asr/run_profiles/coding_pilot.v1.json")
+        manifest = load_json(ROOT / "benchmarks/asr/datasets/coding_pilot.v1.json")
+        samples, dataset_errors = validate_dataset_manifest(manifest)
+
+        errors = validate_run_profile_preflight(
+            profile=profile,
+            dataset_data=manifest,
+            samples=samples,
+            candidate_ids=["gigaam-multilingual-220m", "faster-whisper-small-int8"],
+            repeats=3,
+        )
+
+        self.assertIsNotNone(profile)
+        self.assertEqual([], profile_errors)
+        self.assertEqual([], dataset_errors)
+        self.assertEqual([], errors)
+
+    def test_coding_pilot_run_profile_rejects_incomplete_matrix_and_duration_drift(self) -> None:
+        profile, profile_errors = load_run_profile(ROOT / "benchmarks/asr/run_profiles/coding_pilot.v1.json")
+        manifest = load_json(ROOT / "benchmarks/asr/datasets/coding_pilot.v1.json")
+        manifest["samples"][1]["duration_seconds"] = 30.0
+        samples, dataset_errors = validate_dataset_manifest(manifest)
+
+        errors = validate_run_profile_preflight(
+            profile=profile,
+            dataset_data=manifest,
+            samples=samples,
+            candidate_ids=["faster-whisper-small-int8"],
+            repeats=2,
+        )
+
+        self.assertEqual([], profile_errors)
+        self.assertEqual([], dataset_errors)
+        self.assertIn("run_profile_candidate_matrix_mismatch", errors)
+        self.assertIn("run_profile_repeats_too_low", errors)
+        self.assertIn("run_profile_duration_drift", errors)
 
     def test_valid_private_bindings_resolve_without_leaking_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
