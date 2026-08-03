@@ -12,6 +12,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from nadikt.domain.ports.asr import (
+    AsrBackend,
+    AsrCapabilities,
+    AsrLoadOptions,
+    AsrModelMetadata,
     AsrFailure,
     AsrFailureCode,
     AsrInferenceObserver,
@@ -82,6 +86,78 @@ class ObserverConformanceTest(unittest.TestCase):
         observer.record(event)
 
         self.assertEqual([event], observer.events)
+
+
+class ReusableAdapterConformanceTest(unittest.TestCase):
+    def test_faster_whisper_adapter_conforms_to_asr_engine_shape(self) -> None:
+        from nadikt.infrastructure.asr.faster_whisper import FasterWhisperAsrEngine
+
+        class FakeWhisperModel:
+            def __init__(self, *_args: object, **_kwargs: object) -> None:
+                pass
+
+            def transcribe(self, *_args: object, **_kwargs: object) -> tuple[object, object]:
+                return iter(()), object()
+
+        with __import__("tempfile").TemporaryDirectory() as temp_dir:
+            package_dir = Path(temp_dir)
+            audio = package_dir / "warmup.wav"
+            audio.write_bytes(b"synthetic")
+            engine = FasterWhisperAsrEngine(_metadata(AsrBackend.FASTER_WHISPER, "faster-whisper-small-int8"), FakeWhisperModel)
+
+            engine.load(AsrLoadOptions(package_dir, {"beam_size": 5}))
+            self.assertTrue(engine.is_ready())
+            engine.warm_up(_segment(audio))
+            result = engine.transcribe_segment(_segment(audio))
+            engine.cancel()
+            engine.close()
+            engine.close()
+
+        self.assertEqual(0, result.segment_id)
+
+    def test_gigaam_adapter_conforms_to_asr_engine_shape(self) -> None:
+        from nadikt.infrastructure.asr.gigaam import GigaAMAsrEngine
+
+        class FakeModel:
+            def transcribe(self, *_args: object) -> str:
+                return "synthetic"
+
+        module = __import__("types").SimpleNamespace(load_model=lambda *_args, **_kwargs: FakeModel())
+
+        with __import__("tempfile").TemporaryDirectory() as temp_dir:
+            package_dir = Path(temp_dir)
+            (package_dir / "v3_e2e_ctc.ckpt").write_bytes(b"synthetic")
+            (package_dir / "v3_e2e_ctc_tokenizer.model").write_bytes(b"synthetic")
+            audio = package_dir / "warmup.wav"
+            audio.write_bytes(b"synthetic")
+            engine = GigaAMAsrEngine(_metadata(AsrBackend.GIGAAM, "gigaam-v3-e2e-ctc"), lambda: module)
+
+            engine.load(AsrLoadOptions(package_dir, {"gigaam_model_name": "v3_e2e_ctc"}))
+            self.assertTrue(engine.is_ready())
+            engine.warm_up(_segment(audio))
+            result = engine.transcribe_segment(_segment(audio))
+            engine.cancel()
+            engine.close()
+            engine.close()
+
+        self.assertEqual("synthetic", result.text)
+
+
+def _metadata(backend: AsrBackend, candidate_id: str) -> AsrModelMetadata:
+    return AsrModelMetadata(
+        package_id="safe-package",
+        candidate_id=candidate_id,
+        backend=backend,
+        model_name="Synthetic model",
+        model_revision="test",
+        backend_version="test",
+        license_marker="approved",
+        capabilities=AsrCapabilities(languages=("ru",), max_segment_seconds=25.0, punctuation=True, streaming=False),
+    )
+
+
+def _segment(audio: Path) -> AsrSegmentInput:
+    return AsrSegmentInput("sample", 0, audio, 0.0, 1.0, "ru", "seg-v1")
 
 
 if __name__ == "__main__":

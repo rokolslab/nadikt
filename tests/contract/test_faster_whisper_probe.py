@@ -13,14 +13,15 @@ if str(SRC) not in sys.path:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from benchmarks.asr.manifests import ModelPackageManifest
-from nadikt.infrastructure.asr.faster_whisper import FasterWhisperLocalProbe
+from nadikt.domain.ports.asr import AsrLoadOptions, AsrSegmentInput, AsrTimingEvent
+from nadikt.infrastructure.asr.faster_whisper import FasterWhisperAsrEngine
 
 
 class FasterWhisperProbeTest(unittest.TestCase):
     def test_load_uses_local_cpu_int8_and_consumes_segments_generator(self) -> None:
         created: dict[str, object] = {}
         consumed: list[str] = []
+        events: list[AsrTimingEvent] = []
 
         class FakeWhisperModel:
             def __init__(self, model_path: str, *, device: str, compute_type: str) -> None:
@@ -28,7 +29,7 @@ class FasterWhisperProbeTest(unittest.TestCase):
                 created["device"] = device
                 created["compute_type"] = compute_type
 
-            def transcribe(self, audio_path: str, *, beam_size: int) -> tuple[object, object]:
+            def transcribe(self, audio_path: str, *, beam_size: int, **_kwargs: object) -> tuple[object, object]:
                 created["audio_path"] = audio_path
                 created["beam_size"] = beam_size
 
@@ -47,49 +48,44 @@ class FasterWhisperProbeTest(unittest.TestCase):
             package_dir.mkdir()
             audio = Path(temp_dir) / "sample.wav"
             audio.write_bytes(b"not-real-audio")
-            probe = FasterWhisperLocalProbe(FakeWhisperModel)
+            engine = FasterWhisperAsrEngine(_metadata(), FakeWhisperModel)
+            engine.load(AsrLoadOptions(package_dir, {"beam_size": 7}))
+            transcript = engine.transcribe_segment(_segment(audio), _Observer(events))
+            engine.close()
 
-            load = probe.load(package_dir, _manifest())
-            transcribe = probe.transcribe(audio, "controlled-audio", beam_size=7)
-            close = probe.close()
-
-        self.assertEqual("success", load.outcome)
-        self.assertEqual("success", transcribe.outcome)
-        self.assertEqual("success", close.outcome)
+        self.assertEqual("", transcript.text)
         self.assertEqual("cpu", created["device"])
         self.assertEqual("int8", created["compute_type"])
         self.assertEqual(7, created["beam_size"])
         self.assertEqual(["segment-0", "segment-1"], consumed)
         self.assertTrue(created["closed"])
+        self.assertEqual(["first_result", "transcribe_done"], [event.phase for event in events])
 
     def test_missing_dependency_is_controlled_outcome(self) -> None:
-        probe = FasterWhisperLocalProbe()
+        engine = FasterWhisperAsrEngine(_metadata())
 
         with tempfile.TemporaryDirectory() as temp_dir:
             package_dir = Path(temp_dir) / "ct2-package"
             package_dir.mkdir()
             with patch("nadikt.infrastructure.asr.faster_whisper.importlib.import_module", side_effect=ImportError("missing")):
-                result = probe.load(package_dir, _manifest())
-
-        self.assertEqual("backend_unavailable", result.outcome)
+                with self.assertRaisesRegex(Exception, "incompatible_backend"):
+                    engine.load(AsrLoadOptions(package_dir, {}))
 
     def test_incompatible_dependency_is_controlled_outcome(self) -> None:
-        probe = FasterWhisperLocalProbe()
+        engine = FasterWhisperAsrEngine(_metadata())
 
         with tempfile.TemporaryDirectory() as temp_dir:
             package_dir = Path(temp_dir) / "ct2-package"
             package_dir.mkdir()
             with patch("nadikt.infrastructure.asr.faster_whisper.importlib.import_module", return_value=object()):
-                result = probe.load(package_dir, _manifest())
-
-        self.assertEqual("backend_unavailable", result.outcome)
+                with self.assertRaisesRegex(Exception, "incompatible_backend"):
+                    engine.load(AsrLoadOptions(package_dir, {}))
 
     def test_hub_identifier_is_rejected(self) -> None:
-        probe = FasterWhisperLocalProbe(lambda *args, **kwargs: object())
+        engine = FasterWhisperAsrEngine(_metadata(), lambda *args, **kwargs: object())
 
-        result = probe.load(Path("small"), _manifest())
-
-        self.assertEqual("hub_identifier_rejected", result.outcome)
+        with self.assertRaisesRegex(Exception, "invalid_package_path"):
+            engine.load(AsrLoadOptions(Path("small"), {}))
 
     def test_transcribe_exception_is_safe_outcome(self) -> None:
         class FailingWhisperModel:
@@ -104,29 +100,39 @@ class FasterWhisperProbeTest(unittest.TestCase):
             package_dir.mkdir()
             audio = Path(temp_dir) / "secret-canary.wav"
             audio.write_bytes(b"not-real-audio")
-            probe = FasterWhisperLocalProbe(FailingWhisperModel)
-            probe.load(package_dir, _manifest())
-            result = probe.transcribe(audio, "safe-label")
+            engine = FasterWhisperAsrEngine(_metadata(), FailingWhisperModel)
+            engine.load(AsrLoadOptions(package_dir, {}))
+            with self.assertRaisesRegex(Exception, "transcribe_failed") as captured:
+                engine.transcribe_segment(_segment(audio))
 
-        self.assertEqual("transcribe_failed", result.outcome)
-        self.assertNotIn("secret-canary", repr(result))
+        self.assertNotIn("secret-canary", repr(captured.exception))
 
 
-def _manifest() -> ModelPackageManifest:
-    return ModelPackageManifest(
+class _Observer:
+    def __init__(self, events: list[AsrTimingEvent]) -> None:
+        self.events = events
+
+    def record(self, event: AsrTimingEvent) -> None:
+        self.events.append(event)
+
+
+def _metadata() -> object:
+    from nadikt.domain.ports.asr import AsrBackend, AsrCapabilities, AsrModelMetadata
+
+    return AsrModelMetadata(
         package_id="fw-local",
         candidate_id="faster-whisper-small-int8",
-        backend="faster-whisper",
+        backend=AsrBackend.FASTER_WHISPER,
         model_name="Whisper small CTranslate2 INT8",
         model_revision="test",
-        package_path=Path("local/fw"),
-        manifest_relative_path="manifest.json",
-        manifest_sha256="0" * 64,
-        rights_statuses={"local_evaluation": {"status": "approved", "review_record_id": "test"}},
-        capabilities={},
-        inference_defaults={"beam_size": 5},
-        critical_files=(),
+        backend_version="test",
+        license_marker="approved",
+        capabilities=AsrCapabilities(languages=("ru",), max_segment_seconds=25.0, punctuation=True, streaming=False),
     )
+
+
+def _segment(audio: Path) -> AsrSegmentInput:
+    return AsrSegmentInput("sample", 0, audio, 0.0, 1.0, "ru", "seg-v1")
 
 
 if __name__ == "__main__":

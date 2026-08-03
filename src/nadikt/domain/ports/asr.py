@@ -40,6 +40,14 @@ class AsrFailureCode(str, Enum):
     RESOURCE_RELEASE_FAILED = "resource_release_failed"
 
 
+class AsrEngineError(Exception):
+    """Exception carrying only a typed, privacy-safe ASR failure."""
+
+    def __init__(self, failure: "AsrFailure") -> None:
+        super().__init__(failure.code.value)
+        self.failure = failure
+
+
 @dataclass(frozen=True)
 class AsrCapabilities:
     """Normalized feature description independent of concrete SDKs."""
@@ -259,6 +267,7 @@ __all__ = [
     "AsrBackend",
     "AsrCapabilities",
     "AsrEngine",
+    "AsrEngineError",
     "AsrFailure",
     "AsrFailureCode",
     "AsrInferenceObserver",

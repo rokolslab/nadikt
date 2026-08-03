@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,14 +15,26 @@ from typing import Any, Callable
 from .logging_config import get_logger
 from .manifests import ModelPackageManifest, load_json, load_model_inventory
 from .offline_check import validate_local_package
+from .package_integrity import checksum_prefix
 from .privacy_audit import audit_text_artifact
 from .probe_results import ProbeOutcome, ProbePackageResult, ProbePhaseResult
 
-LOGGER = get_logger(__name__)
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+from nadikt.domain.ports.asr import (
+    AsrBackend,
+    AsrCapabilities,
+    AsrEngine,
+    AsrEngineError,
+    AsrLoadOptions,
+    AsrModelMetadata,
+    AsrSegmentInput,
+)
+
+LOGGER = get_logger(__name__)
 
 ProbeFactory = Callable[[], Any]
 
@@ -202,15 +215,203 @@ def _default_backend_factories() -> dict[str, ProbeFactory]:
 
 
 def _create_faster_whisper_probe() -> Any:
-    from nadikt.infrastructure.asr.faster_whisper import FasterWhisperLocalProbe
-
-    return FasterWhisperLocalProbe()
+    return _SpawnedWorkerProbeAdapter()
 
 
 def _create_gigaam_probe() -> Any:
-    from nadikt.infrastructure.asr.gigaam import GigaAMLocalProbe
+    return _SpawnedWorkerProbeAdapter()
 
-    return GigaAMLocalProbe()
+
+class _SpawnedWorkerProbeAdapter:
+    """Default probe adapter that keeps ASR SDK imports inside a child process."""
+
+    def __init__(self) -> None:
+        self._package: ModelPackageManifest | None = None
+        self._package_dir: Path | None = None
+        self._load_result: object | None = None
+
+    def load(self, package_dir: Path, package: ModelPackageManifest) -> ProbePhaseResult:
+        self._package = package
+        self._package_dir = package_dir
+        result = self._run_worker(audio_file=None)
+        self._load_result = result
+        for phase in result.phases:
+            if phase.phase == "load":
+                return ProbePhaseResult("load", phase.outcome, phase.duration_ms)
+        return ProbePhaseResult("load", result.worker_status)
+
+    def is_ready(self) -> ProbePhaseResult:
+        result = self._load_result
+        if result is None:
+            return ProbePhaseResult("readiness", ProbeOutcome.READINESS_FAILED.value)
+        for phase in result.phases:
+            if phase.phase == "readiness":
+                return ProbePhaseResult("readiness", phase.outcome, phase.duration_ms)
+        return ProbePhaseResult("readiness", ProbeOutcome.READINESS_FAILED.value)
+
+    def warm_up(self) -> ProbePhaseResult:
+        return ProbePhaseResult("warmup", ProbeOutcome.NOT_RUN.value, reason_code="worker_requires_audio")
+
+    def transcribe(self, audio_file: Path | None, _audio_label: str | None, **_kwargs: object) -> ProbePhaseResult:
+        if audio_file is None:
+            return ProbePhaseResult("transcribe_probe", ProbeOutcome.NOT_RUN.value)
+        result = self._run_worker(audio_file=audio_file)
+        for phase in result.phases:
+            if phase.phase == "transcribe_probe":
+                return ProbePhaseResult("transcribe_probe", phase.outcome, phase.duration_ms)
+        return ProbePhaseResult("transcribe_probe", result.worker_status)
+
+    def close(self) -> ProbePhaseResult:
+        return ProbePhaseResult("close", ProbeOutcome.SUCCESS.value)
+
+    def _run_worker(self, *, audio_file: Path | None) -> object:
+        from .worker_protocol import WorkerRequest, new_nonce
+        from .worker_supervisor import WorkerSupervisor
+
+        package = self._package
+        package_dir = self._package_dir
+        if package is None or package_dir is None:
+            raise RuntimeError("worker_probe_not_loaded")
+        request = WorkerRequest(
+            nonce=new_nonce(),
+            package_id=package.package_id,
+            candidate_id=package.candidate_id,
+            backend=package.backend,
+            package_dir=package_dir,
+            capabilities=package.capabilities,
+            inference_defaults=package.inference_defaults,
+            critical_checksum_prefixes=tuple(checksum_prefix(item.get("sha256", "")) for item in package.critical_files),
+            audio_file=audio_file,
+            duration_seconds=float(package.inference_defaults.get("probe_duration_seconds") or 1.0) if audio_file is not None else None,
+        )
+        return WorkerSupervisor().run(request)
+
+
+class _DomainEngineProbeAdapter:
+    """Bridge benchmark probe phases to runtime AsrEngine without leaking text."""
+
+    def __init__(self, engine_cls: Callable[[AsrModelMetadata], AsrEngine]) -> None:
+        self._engine_cls = engine_cls
+        self._engine: AsrEngine | None = None
+        self._package: ModelPackageManifest | None = None
+        self._package_dir: Path | None = None
+
+    def load(self, package_dir: Path, package: ModelPackageManifest) -> ProbePhaseResult:
+        started = time.monotonic()
+        self._package = package
+        self._package_dir = package_dir
+        self._engine = self._engine_cls(_metadata_from_package(package))
+        try:
+            self._engine.load(AsrLoadOptions(package_dir, package.inference_defaults))
+        except AsrEngineError as error:
+            return _probe_phase_from_error("load", error, started)
+        return _probe_phase("load", ProbeOutcome.SUCCESS.value, started)
+
+    def is_ready(self) -> ProbePhaseResult:
+        started = time.monotonic()
+        if self._engine is not None and self._engine.is_ready():
+            return _probe_phase("readiness", ProbeOutcome.SUCCESS.value, started)
+        return _probe_phase("readiness", ProbeOutcome.READINESS_FAILED.value, started)
+
+    def warm_up(self) -> ProbePhaseResult:
+        started = time.monotonic()
+        segment = self._segment_from_audio(None)
+        if self._engine is None or segment is None:
+            return _probe_phase("warmup", ProbeOutcome.NOT_RUN.value, started)
+        try:
+            self._engine.warm_up(segment)
+        except AsrEngineError as error:
+            return _probe_phase_from_error("warmup", error, started)
+        return _probe_phase("warmup", ProbeOutcome.SUCCESS.value, started)
+
+    def transcribe(self, audio_file: Path | None, _audio_label: str | None, **_kwargs: object) -> ProbePhaseResult:
+        started = time.monotonic()
+        segment = self._segment_from_audio(audio_file)
+        if self._engine is None or segment is None:
+            return _probe_phase("transcribe_probe", ProbeOutcome.NOT_RUN.value, started)
+        try:
+            self._engine.transcribe_segment(segment)
+        except AsrEngineError as error:
+            return _probe_phase_from_error("transcribe_probe", error, started)
+        return _probe_phase("transcribe_probe", ProbeOutcome.SUCCESS.value, started)
+
+    def close(self) -> ProbePhaseResult:
+        started = time.monotonic()
+        if self._engine is None:
+            return _probe_phase("close", ProbeOutcome.SUCCESS.value, started)
+        try:
+            self._engine.close()
+        except AsrEngineError as error:
+            return _probe_phase_from_error("close", error, started)
+        finally:
+            self._engine = None
+        return _probe_phase("close", ProbeOutcome.SUCCESS.value, started)
+
+    def _segment_from_audio(self, audio_file: Path | None) -> AsrSegmentInput | None:
+        if audio_file is None:
+            return None
+        package = self._package
+        duration = 1.0
+        if package is not None:
+            duration = float(package.inference_defaults.get("probe_duration_seconds") or 1.0)
+        return AsrSegmentInput(
+            sample_id="local_probe_sample",
+            segment_id=0,
+            audio_path=audio_file,
+            start_seconds=0.0,
+            end_seconds=duration,
+            language_profile="ru",
+            segmentation_policy_id="local-probe-v1",
+        )
+
+
+def _metadata_from_package(package: ModelPackageManifest) -> AsrModelMetadata:
+    capabilities = package.capabilities
+    return AsrModelMetadata(
+        package_id=package.package_id,
+        candidate_id=package.candidate_id,
+        backend=AsrBackend(package.backend),
+        model_name=package.model_name,
+        model_revision=package.model_revision,
+        backend_version=str(package.inference_defaults.get("backend_version") or "benchmark-lock"),
+        license_marker=_license_marker(package),
+        capabilities=AsrCapabilities(
+            languages=tuple(str(item) for item in capabilities.get("languages", ("ru",))),
+            max_segment_seconds=float(capabilities.get("max_segment_seconds") or 25.0),
+            punctuation=bool(capabilities.get("punctuation", False)),
+            streaming=bool(capabilities.get("streaming", False)),
+            word_timestamps=bool(capabilities.get("word_timestamps", False)),
+        ),
+        checksum_prefixes=tuple(checksum_prefix(item.get("sha256", "")) for item in package.critical_files),
+    )
+
+
+def _license_marker(package: ModelPackageManifest) -> str:
+    local_evaluation = package.rights_statuses.get("local_evaluation", {})
+    return str(local_evaluation.get("status") or "unknown")
+
+
+def _probe_phase(phase: str, outcome: str, started: float, *, details: dict[str, object] | None = None) -> ProbePhaseResult:
+    return ProbePhaseResult(phase, outcome, (time.monotonic() - started) * 1000, details=details or {})
+
+
+def _probe_phase_from_error(phase: str, error: AsrEngineError, started: float) -> ProbePhaseResult:
+    return _probe_phase(phase, _probe_outcome_from_failure(error), started)
+
+
+def _probe_outcome_from_failure(error: AsrEngineError) -> str:
+    mapping = {
+        "missing_package": ProbeOutcome.MISSING_PACKAGE.value,
+        "invalid_package_path": ProbeOutcome.HUB_IDENTIFIER_REJECTED.value,
+        "missing_critical_file": ProbeOutcome.MISSING_CRITICAL_FILE.value,
+        "incompatible_backend": ProbeOutcome.BACKEND_UNAVAILABLE.value,
+        "engine_not_ready": ProbeOutcome.READINESS_FAILED.value,
+        "segment_too_long": ProbeOutcome.SEGMENT_TOO_LONG.value,
+        "transcribe_failed": ProbeOutcome.TRANSCRIBE_FAILED.value,
+        "warm_up_failed": ProbeOutcome.TRANSCRIBE_FAILED.value,
+        "resource_release_failed": ProbeOutcome.CLOSE_FAILED.value,
+    }
+    return mapping.get(error.failure.code.value, error.failure.code.value)
 
 
 def _package_outcome(phases: list[ProbePhaseResult]) -> str:

@@ -170,7 +170,7 @@ Commit 3 является обязательным code-freeze checkpoint: ре�
 
   **Зависимости:** задачи 4 и 5.
 
-- [ ] **Задача 8: Реализовать backend adapters и общий conformance suite**
+- [x] **Задача 8: Реализовать backend adapters и общий conformance suite**
 
   **Результат:** reusable GigaAM/faster-whisper adapters реализуют уточнённый `AsrEngine`; infrastructure больше не зависит от `benchmarks/asr`. faster-whisper принимает только verified local CTranslate2 directory, CPU INT8 и fully consumes lazy generator. GigaAM package layout привязан к pinned SDK revision, все потенциально нужные SDK files проверены до import/load, segment duration ограничен `<= 25s`.
 
@@ -182,7 +182,7 @@ Commit 3 является обязательным code-freeze checkpoint: ре�
 
   **Зависимости:** задачи 3, 4 и 7.
 
-- [ ] **Задача 9: Ввести spawned worker/supervisor boundary и привязанное offline evidence**
+- [x] **Задача 9: Ввести spawned worker/supervisor boundary и привязанное offline evidence**
 
   **Результат:** parent валидирует schemas/package/bindings, но не импортирует ASR SDK и не получает transcript/reference. Spawned worker выполняет load, warm-up, transcription и metrics; parent получает только bounded, versioned, allowlist JSON DTO. Тот же supervisor используется lifecycle probe и benchmark runner.
 

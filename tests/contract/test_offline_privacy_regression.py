@@ -16,7 +16,8 @@ if str(ROOT) not in sys.path:
 
 from benchmarks.asr.local_model_probe import run_local_model_probe
 from benchmarks.asr.manifests import load_json, validate_model_inventory
-from nadikt.infrastructure.asr.faster_whisper import FasterWhisperLocalProbe
+from nadikt.domain.ports.asr import AsrLoadOptions, AsrSegmentInput
+from nadikt.infrastructure.asr.faster_whisper import FasterWhisperAsrEngine
 
 
 class OfflinePrivacyRegressionTest(unittest.TestCase):
@@ -79,14 +80,14 @@ class OfflinePrivacyRegressionTest(unittest.TestCase):
             package_dir.mkdir()
             audio = Path(temp_dir) / "client-secret-audio.wav"
             audio.write_bytes(b"not-real-audio")
-            probe = FasterWhisperLocalProbe(FailingWhisperModel)
-            probe.load(package_dir, _manifest())
+            engine = FasterWhisperAsrEngine(_metadata(), FailingWhisperModel)
+            engine.load(AsrLoadOptions(package_dir, {}))
 
             with self.assertLogs("nadikt.infrastructure.asr.faster_whisper", level=logging.ERROR) as captured:
-                result = probe.transcribe(audio, "safe-audio-label")
+                with self.assertRaisesRegex(Exception, "transcribe_failed"):
+                    engine.transcribe_segment(AsrSegmentInput("sample", 0, audio, 0.0, 1.0, "ru", "seg-v1"))
 
         rendered_logs = "\n".join(captured.output)
-        self.assertEqual("transcribe_failed", result.outcome)
         self.assertNotIn(canary, rendered_logs)
         self.assertNotIn("client-secret-audio", rendered_logs)
         self.assertIn("faster_whisper_transcribe_failed", rendered_logs)
@@ -128,22 +129,18 @@ def _inventory_payload(sha256: str) -> dict[str, object]:
     }
 
 
-def _manifest() -> object:
-    from benchmarks.asr.manifests import ModelPackageManifest
+def _metadata() -> object:
+    from nadikt.domain.ports.asr import AsrBackend, AsrCapabilities, AsrModelMetadata
 
-    return ModelPackageManifest(
+    return AsrModelMetadata(
         package_id="fw-local",
         candidate_id="faster-whisper-small-int8",
-        backend="faster-whisper",
+        backend=AsrBackend.FASTER_WHISPER,
         model_name="Whisper small CTranslate2 INT8",
         model_revision="test",
-        package_path=Path("local/fw"),
-        manifest_relative_path="manifest.json",
-        manifest_sha256="0" * 64,
-        rights_statuses={"local_evaluation": {"status": "approved", "review_record_id": "test"}},
-        capabilities={},
-        inference_defaults={"beam_size": 5},
-        critical_files=(),
+        backend_version="test",
+        license_marker="approved",
+        capabilities=AsrCapabilities(languages=("ru",), max_segment_seconds=25.0, punctuation=True, streaming=False),
     )
 
 

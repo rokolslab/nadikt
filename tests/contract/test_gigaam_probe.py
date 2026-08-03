@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import types
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -13,27 +13,27 @@ if str(SRC) not in sys.path:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from benchmarks.asr.manifests import ModelPackageManifest
-from nadikt.infrastructure.asr.gigaam import GigaAMLocalProbe
+from nadikt.domain.ports.asr import AsrLoadOptions, AsrSegmentInput
+from nadikt.infrastructure.asr.gigaam import GigaAMAsrEngine
 
 
 class GigaAMProbeTest(unittest.TestCase):
     def test_missing_dependency_is_controlled_outcome(self) -> None:
-        probe = GigaAMLocalProbe(lambda: (_ for _ in ()).throw(ImportError("missing")))
+        engine = GigaAMAsrEngine(_metadata(), lambda: (_ for _ in ()).throw(ImportError("missing")))
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            result = probe.load(Path(temp_dir), _manifest())
-
-        self.assertEqual("backend_unavailable", result.outcome)
+            _write_required_files(Path(temp_dir))
+            with self.assertRaisesRegex(Exception, "incompatible_backend"):
+                engine.load(AsrLoadOptions(Path(temp_dir), {"gigaam_model_name": "v3_e2e_ctc"}))
 
     def test_missing_load_model_api_is_local_loading_unconfirmed(self) -> None:
         module = types.SimpleNamespace(load_model_from_package=lambda _path: object())
-        probe = GigaAMLocalProbe(lambda: module)
+        engine = GigaAMAsrEngine(_metadata(), lambda: module)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            result = probe.load(Path(temp_dir), _manifest())
-
-        self.assertEqual("local_loading_unconfirmed", result.outcome)
+            _write_required_files(Path(temp_dir))
+            with self.assertRaisesRegex(Exception, "incompatible_backend"):
+                engine.load(AsrLoadOptions(Path(temp_dir), {"gigaam_model_name": "v3_e2e_ctc"}))
 
     def test_download_root_loader_can_transcribe_short_segment_and_close(self) -> None:
         events: list[tuple[str, object]] = []
@@ -41,7 +41,7 @@ class GigaAMProbeTest(unittest.TestCase):
         class FakeModel:
             def transcribe(self, audio_path: str) -> str:
                 events.append(("transcribe", Path(audio_path).name))
-                return "payload must not be exposed"
+                return "payload must not be logged"
 
             def close(self) -> None:
                 events.append(("close", None))
@@ -51,18 +51,18 @@ class GigaAMProbeTest(unittest.TestCase):
             return FakeModel()
 
         module = types.SimpleNamespace(load_model=load_model)
-        probe = GigaAMLocalProbe(lambda: module)
+        engine = GigaAMAsrEngine(_metadata(), lambda: module)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            audio = Path(temp_dir) / "sample.wav"
+            root = Path(temp_dir)
+            _write_required_files(root)
+            audio = root / "sample.wav"
             audio.write_bytes(b"not-real-audio")
-            load = probe.load(Path(temp_dir), _manifest())
-            transcribe = probe.transcribe(audio, "controlled-audio", duration_seconds=24.5)
-            close = probe.close()
+            engine.load(AsrLoadOptions(root, {"gigaam_model_name": "v3_e2e_ctc"}))
+            transcript = engine.transcribe_segment(_segment(audio, duration=24.5))
+            engine.close()
 
-        self.assertEqual("success", load.outcome)
-        self.assertEqual("success", transcribe.outcome)
-        self.assertEqual("success", close.outcome)
+        self.assertEqual("payload must not be logged", transcript.text)
         self.assertEqual("load", events[0][0])
         self.assertEqual("v3_e2e_ctc", events[0][1][0])
         self.assertEqual("cpu", events[0][1][2])
@@ -70,51 +70,14 @@ class GigaAMProbeTest(unittest.TestCase):
         self.assertFalse(events[0][1][4])
         self.assertEqual([("transcribe", "sample.wav"), ("close", None)], events[1:])
 
-    def test_empty_critical_files_rejects_before_load_model(self) -> None:
-        module = types.SimpleNamespace(load_model=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not load")))
-        probe = GigaAMLocalProbe(lambda: module)
-        manifest = ModelPackageManifest(
-            package_id="gigaam-local",
-            candidate_id="gigaam-v3-e2e-ctc",
-            backend="gigaam",
-            model_name="GigaAM v3 e2e CTC",
-            model_revision="test",
-            package_path=Path("local/gigaam"),
-            manifest_relative_path="manifest.json",
-            manifest_sha256="0" * 64,
-            rights_statuses={"local_evaluation": {"status": "approved", "review_record_id": "test"}},
-            capabilities={},
-            inference_defaults={},
-            critical_files=(),
-        )
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            result = probe.load(Path(temp_dir), manifest)
-
-        self.assertEqual("missing_critical_file", result.outcome)
-
     def test_incomplete_required_files_rejects_before_load_model(self) -> None:
         module = types.SimpleNamespace(load_model=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not load")))
-        probe = GigaAMLocalProbe(lambda: module)
-        manifest = ModelPackageManifest(
-            package_id="gigaam-local",
-            candidate_id="gigaam-v3-e2e-ctc",
-            backend="gigaam",
-            model_name="GigaAM v3 e2e CTC",
-            model_revision="test",
-            package_path=Path("local/gigaam"),
-            manifest_relative_path="manifest.json",
-            manifest_sha256="0" * 64,
-            rights_statuses={"local_evaluation": {"status": "approved", "review_record_id": "test"}},
-            capabilities={},
-            inference_defaults={},
-            critical_files=({"relative_path": "v3_e2e_ctc.ckpt", "sha256": "0" * 64},),
-        )
+        engine = GigaAMAsrEngine(_metadata(), lambda: module)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            result = probe.load(Path(temp_dir), manifest)
-
-        self.assertEqual("missing_critical_file", result.outcome)
+            (Path(temp_dir) / "v3_e2e_ctc.ckpt").write_bytes(b"synthetic")
+            with self.assertRaisesRegex(Exception, "missing_critical_file"):
+                engine.load(AsrLoadOptions(Path(temp_dir), {"gigaam_model_name": "v3_e2e_ctc"}))
 
     def test_segment_too_long_is_rejected_before_transcribe(self) -> None:
         class FakeModel:
@@ -122,15 +85,16 @@ class GigaAMProbeTest(unittest.TestCase):
                 raise AssertionError("should not transcribe long segment")
 
         module = types.SimpleNamespace(load_model=lambda *_args, **_kwargs: FakeModel())
-        probe = GigaAMLocalProbe(lambda: module)
+        engine = GigaAMAsrEngine(_metadata(), lambda: module)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            audio = Path(temp_dir) / "sample.wav"
+            root = Path(temp_dir)
+            _write_required_files(root)
+            audio = root / "sample.wav"
             audio.write_bytes(b"not-real-audio")
-            probe.load(Path(temp_dir), _manifest())
-            result = probe.transcribe(audio, "controlled-audio", duration_seconds=26.0)
-
-        self.assertEqual("segment_too_long", result.outcome)
+            engine.load(AsrLoadOptions(root, {"gigaam_model_name": "v3_e2e_ctc"}))
+            with self.assertRaisesRegex(Exception, "segment_too_long"):
+                engine.transcribe_segment(_segment(audio, duration=26.0))
 
     def test_transcribe_exception_is_safe_outcome(self) -> None:
         class FailingModel:
@@ -138,36 +102,42 @@ class GigaAMProbeTest(unittest.TestCase):
                 raise RuntimeError("sensitive local path must not be returned")
 
         module = types.SimpleNamespace(load_model=lambda *_args, **_kwargs: FailingModel())
-        probe = GigaAMLocalProbe(lambda: module)
+        engine = GigaAMAsrEngine(_metadata(), lambda: module)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            audio = Path(temp_dir) / "secret-canary.wav"
+            root = Path(temp_dir)
+            _write_required_files(root)
+            audio = root / "secret-canary.wav"
             audio.write_bytes(b"not-real-audio")
-            probe.load(Path(temp_dir), _manifest())
-            result = probe.transcribe(audio, "safe-label", duration_seconds=1.0)
+            engine.load(AsrLoadOptions(root, {"gigaam_model_name": "v3_e2e_ctc"}))
+            with self.assertRaisesRegex(Exception, "transcribe_failed") as captured:
+                engine.transcribe_segment(_segment(audio, duration=1.0))
 
-        self.assertEqual("transcribe_failed", result.outcome)
-        self.assertNotIn("secret-canary", repr(result))
+        self.assertNotIn("secret-canary", repr(captured.exception))
 
 
-def _manifest() -> ModelPackageManifest:
-    return ModelPackageManifest(
+def _metadata() -> object:
+    from nadikt.domain.ports.asr import AsrBackend, AsrCapabilities, AsrModelMetadata
+
+    return AsrModelMetadata(
         package_id="gigaam-local",
         candidate_id="gigaam-v3-e2e-ctc",
-        backend="gigaam",
+        backend=AsrBackend.GIGAAM,
         model_name="GigaAM v3 e2e CTC",
         model_revision="test",
-        package_path=Path("local/gigaam"),
-        manifest_relative_path="manifest.json",
-        manifest_sha256="0" * 64,
-        rights_statuses={"local_evaluation": {"status": "approved", "review_record_id": "test"}},
-        capabilities={},
-        inference_defaults={},
-        critical_files=(
-            {"relative_path": "v3_e2e_ctc.ckpt", "sha256": "0" * 64},
-            {"relative_path": "v3_e2e_ctc_tokenizer.model", "sha256": "0" * 64},
-        ),
+        backend_version="test",
+        license_marker="approved",
+        capabilities=AsrCapabilities(languages=("ru",), max_segment_seconds=25.0, punctuation=True, streaming=False),
     )
+
+
+def _segment(audio: Path, *, duration: float) -> AsrSegmentInput:
+    return AsrSegmentInput("sample", 0, audio, 0.0, duration, "ru", "seg-v1")
+
+
+def _write_required_files(root: Path) -> None:
+    (root / "v3_e2e_ctc.ckpt").write_bytes(b"synthetic")
+    (root / "v3_e2e_ctc_tokenizer.model").write_bytes(b"synthetic")
 
 
 if __name__ == "__main__":
