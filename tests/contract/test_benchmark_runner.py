@@ -262,19 +262,12 @@ class BenchmarkRunnerTest(unittest.TestCase):
         )
         self.assertEqual([0, 1], [call["repeat_index"] for call in supervisor.calls])
         self.assertEqual([["coding_001"], ["coding_001"]], [call["scored_sample_ids"] for call in supervisor.calls])
-        self.assertEqual(
-            {
-                "wer": {
-                    "metric_name": "wer",
-                    "value": 0.3,
-                    "numerator": 3,
-                    "denominator": 10,
-                    "status": "ok",
-                    "sample_measurements": 2,
-                }
-            },
-            candidate.quality_aggregates,
-        )
+        self.assertEqual(0.3, candidate.quality_aggregates["wer"]["value"])
+        self.assertEqual("corpus", candidate.quality_aggregates["wer"]["category"])
+        self.assertEqual("complete", candidate.quality_aggregates["wer"]["completeness_status"])
+        self.assertEqual(2, candidate.quality_aggregates["wer"]["applicable_measurements"])
+        self.assertEqual(0.3, candidate.quality_aggregates["category:ru_coding_terms:wer"]["value"])
+        self.assertEqual("ru_coding_terms", candidate.quality_aggregates["category:ru_coding_terms:wer"]["category"])
         self.assertEqual(2, candidate.resource_aggregates["sample_measurements"])
         self.assertEqual(0.75, candidate.resource_aggregates["corpus_rtf"])
         self.assertEqual(2, candidate.resource_aggregates["repeat_corpus_rtf_n"])
@@ -288,6 +281,9 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertIn("phase_too_short", candidate.resource_aggregates["phase_resource_missed_reasons"])
         self.assertEqual(candidate.to_json(), persisted["candidates"][0])
         self.assertEqual("fake-sampler:v1", persisted["measurement"]["resource_sampler"])
+        self.assertIn("execution_fingerprint", persisted["measurement"])
+        self.assertIn("git", persisted["measurement"]["execution_fingerprint"])
+        self.assertIn("package-0", persisted["measurement"]["execution_fingerprint"]["package_digest_prefixes"])
         rendered = json.dumps(persisted, ensure_ascii=False, sort_keys=True)
         for private_value in (
             private_root,

@@ -96,10 +96,18 @@ def coding_term_accuracy(term_records: list[Mapping[str, object]], hypothesis: s
     matched = 0
     for record in term_records:
         expected = _expected_occurrences(record)
+        require_latin = bool(record.get("require_latin", False))
         variants = record.get("accepted_variants", [])
         if not isinstance(variants, list):
             variants = []
-        matched += min(expected, sum(_count_variant(normalized_hypothesis, str(variant)) for variant in variants if isinstance(variant, str)))
+        matched += min(
+            expected,
+            sum(
+                _count_variant(normalized_hypothesis, str(variant))
+                for variant in variants
+                if isinstance(variant, str) and (not require_latin or _has_latin(variant))
+            ),
+        )
     return QualityMetricResult(metric_name=metric_name, value=matched / denominator, numerator=matched, denominator=denominator)
 
 
@@ -139,6 +147,10 @@ def _count_variant(normalized_hypothesis: str, variant: str) -> int:
         return 0
     pattern = rf"(?<![0-9a-zа-яё_./+\-]){re.escape(normalized_variant)}(?![0-9a-zа-яё_./+\-])"
     return len(re.findall(pattern, normalized_hypothesis))
+
+
+def _has_latin(text: str) -> bool:
+    return any(("a" <= char <= "z") or ("A" <= char <= "Z") for char in text)
 
 
 def _levenshtein(left: list[str], right: list[str]) -> int:

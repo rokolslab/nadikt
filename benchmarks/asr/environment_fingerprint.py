@@ -38,6 +38,10 @@ class BenchmarkEnvironmentProfile:
     cpu_threads: int
     openmp_num_threads: int
     blas_num_threads: int
+    git_revision: str = "unknown"
+    git_clean: bool = False
+    launcher_profiles: dict[str, str] | None = None
+    package_digest_prefixes: dict[str, str] | None = None
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -60,6 +64,12 @@ class BenchmarkEnvironmentProfile:
                 "openmp_num_threads": self.openmp_num_threads,
                 "blas_num_threads": self.blas_num_threads,
             },
+            "git": {
+                "revision": self.git_revision,
+                "clean": self.git_clean,
+            },
+            "launcher_profiles": dict(sorted((self.launcher_profiles or {}).items())),
+            "package_digest_prefixes": dict(sorted((self.package_digest_prefixes or {}).items())),
         }
 
 
@@ -70,6 +80,10 @@ def build_environment_fingerprint(
     cpu_threads: int = 4,
     openmp_num_threads: int = 4,
     blas_num_threads: int = 1,
+    git_revision: str = "unknown",
+    git_clean: bool = False,
+    launcher_profiles: dict[str, str] | None = None,
+    package_digest_prefixes: dict[str, str] | None = None,
 ) -> BenchmarkEnvironmentProfile:
     """Build an allowlisted benchmark environment profile without sensitive paths."""
 
@@ -86,6 +100,10 @@ def build_environment_fingerprint(
             platform.machine(),
             *[f"{name}:{digest}" for name, digest in sorted(locks.items())],
             *[f"{name}:{version}" for name, version in sorted(package_versions.items())],
+            git_revision,
+            str(git_clean),
+            *[f"launcher:{key}:{value}" for key, value in sorted((launcher_profiles or {}).items())],
+            *[f"package:{key}:{value}" for key, value in sorted((package_digest_prefixes or {}).items())],
         ]
     )
     profile_id = checksum_prefix(hashlib.sha256(profile_seed.encode("utf-8")).hexdigest())
@@ -102,6 +120,10 @@ def build_environment_fingerprint(
         cpu_threads=cpu_threads,
         openmp_num_threads=openmp_num_threads,
         blas_num_threads=blas_num_threads,
+        git_revision=git_revision,
+        git_clean=git_clean,
+        launcher_profiles=dict(launcher_profiles or {}),
+        package_digest_prefixes=dict(package_digest_prefixes or {}),
     )
     LOGGER.info(
         "environment_fingerprint_done",

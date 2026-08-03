@@ -38,6 +38,17 @@ class QualityMetricsTest(unittest.TestCase):
         self.assertEqual(4, result.numerator)
         self.assertEqual(1.0, result.value)
 
+    def test_coding_terms_require_latin_variants_when_requested(self) -> None:
+        records = [
+            {"canonical": "API", "accepted_variants": ["API", "апи"], "expected_occurrences": 1, "require_latin": True},
+        ]
+
+        latin = coding_term_accuracy(records, "вызови API")
+        cyrillic = coding_term_accuracy(records, "вызови апи")
+
+        self.assertEqual(1, latin.numerator)
+        self.assertEqual(0, cyrillic.numerator)
+
     def test_coding_terms_count_multiword_identifiers_and_latin_preservation(self) -> None:
         records = [
             {"canonical": "docker compose", "accepted_variants": ["docker compose", "docker-compose"], "expected_occurrences": 1, "require_latin": True},

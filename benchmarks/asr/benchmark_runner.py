@@ -13,6 +13,7 @@ from typing import Any
 
 from .benchmark_results import BenchmarkResult, CandidateAggregate, write_result_atomic
 from .dataset_bindings import validate_dataset_bindings
+from .environment_fingerprint import build_environment_fingerprint
 from .logging_config import get_logger
 from .manifests import SampleManifest, load_json, load_model_inventory, load_run_profile, validate_dataset_manifest, validate_run_profile_preflight
 from .offline_evidence import unverified_evidence
@@ -85,10 +86,11 @@ def run_benchmark(
         "binding_error_count": len(binding_result.errors) if binding_result is not None else 0,
     }
     evidence = unverified_evidence(run_id).to_json()
+    git_revision = _git_revision(full=True)
     result = BenchmarkResult(
         run_id=run_id,
         run_kind=run_kind,
-        nadikt_revision=_git_revision(),
+        nadikt_revision=git_revision[:12] if git_revision != "unknown" else "unknown",
         dataset={
             "dataset_id": str(dataset_data.get("dataset_id") or "unknown"),
             "dataset_revision": str(dataset_data.get("dataset_revision") or "unknown"),
@@ -96,7 +98,12 @@ def run_benchmark(
             "binding_status": binding_result.outcome if binding_result is not None else "not_provided",
         },
         candidates=tuple(aggregates),
-        measurement={"backend": "spawned-worker", "repeats_requested": repeats, "resource_sampler": _measurement_resource_sampler(aggregates)},
+        measurement={
+            "backend": "spawned-worker",
+            "repeats_requested": repeats,
+            "resource_sampler": _measurement_resource_sampler(aggregates),
+            "execution_fingerprint": _execution_fingerprint(run_profile, selected, git_revision).to_json(),
+        },
         settings=_safe_settings(run_profile, candidate, repeats),
         offline_evidence=evidence,
         privacy=privacy_payload,
@@ -180,7 +187,7 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
             phase_outcomes.update({phase.phase: phase.outcome for phase in result.repeat.phases})
             for sample in result.repeat.samples:
                 if sample.scored:
-                    _collect_sample_metrics(quality_results, sample.metrics)
+                    _collect_sample_metrics(quality_results, sample.metrics, sample.category)
             resource_samples.append(_resource_sample_v2(result.repeat.samples, scored_samples, result.repeat.phases, supervised.resource_report))
             if supervised.supervisor_outcome == "completed" and result.worker_status == "success" and result.repeat.outcome == "success":
                 completed += 1
@@ -201,12 +208,31 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
     return outcome, aggregates
 
 
-def _git_revision() -> str:
+def _git_revision(*, full: bool = False) -> str:
     try:
-        completed = subprocess.run(["git", "rev-parse", "--short", "HEAD"], text=True, capture_output=True, check=False, timeout=5)
+        command = ["git", "rev-parse", "HEAD"] if full else ["git", "rev-parse", "--short", "HEAD"]
+        completed = subprocess.run(command, text=True, capture_output=True, check=False, timeout=5)
     except Exception:
         return "unknown"
     return completed.stdout.strip() or "unknown"
+
+
+def _git_clean() -> bool:
+    try:
+        completed = subprocess.run(["git", "status", "--porcelain"], text=True, capture_output=True, check=False, timeout=5)
+    except Exception:
+        return False
+    return completed.returncode == 0 and not completed.stdout.strip()
+
+
+def _execution_fingerprint(run_profile: object | None, packages: list[object], git_revision: str) -> object:
+    return build_environment_fingerprint(
+        lock_files=sorted((Path.cwd() / "requirements" / "benchmark").glob("*.lock.txt")),
+        git_revision=git_revision,
+        git_clean=_git_clean(),
+        launcher_profiles=dict(getattr(run_profile, "launcher_profiles", {})) if run_profile is not None else {},
+        package_digest_prefixes={str(package.package_id): str(package.manifest_sha256)[:12] for package in packages},
+    )
 
 
 def _collect_quality_results(target: dict[str, list[dict[str, object]]], metrics: Any) -> None:
@@ -217,9 +243,11 @@ def _collect_quality_results(target: dict[str, list[dict[str, object]]], metrics
             target.setdefault(str(metric_name), []).append(metric)
 
 
-def _collect_sample_metrics(target: dict[str, list[dict[str, object]]], metrics: tuple[WorkerMetricResult, ...]) -> None:
+def _collect_sample_metrics(target: dict[str, list[dict[str, object]]], metrics: tuple[WorkerMetricResult, ...], category: str) -> None:
     for metric in metrics:
-        target.setdefault(metric.metric_name, []).append(metric.to_json())
+        metric_json = metric.to_json()
+        target.setdefault(metric.metric_name, []).append(metric_json)
+        target.setdefault(f"category:{category}:{metric.metric_name}", []).append(metric_json)
 
 
 def _aggregate_quality_results(metrics: dict[str, list[dict[str, object]]]) -> dict[str, dict[str, object]]:
@@ -230,12 +258,16 @@ def _aggregate_quality_results(metrics: dict[str, list[dict[str, object]]]) -> d
         numerator = sum(_int_value(item.get("numerator")) for item in applicable)
         status = "ok" if denominator else "not_applicable"
         aggregates[metric_name] = {
-            "metric_name": metric_name,
+            "metric_name": metric_name.split(":")[-1],
+            "category": metric_name.split(":")[1] if metric_name.startswith("category:") else "corpus",
             "value": round(numerator / denominator, 6) if denominator else 0.0,
             "numerator": numerator,
             "denominator": denominator,
             "status": status,
             "sample_measurements": len(items),
+            "applicable_measurements": len(applicable),
+            "not_applicable_measurements": sum(1 for item in items if item.get("status") == "not_applicable"),
+            "completeness_status": "complete" if len(applicable) == len(items) and denominator else "incomplete",
         }
     return aggregates
 

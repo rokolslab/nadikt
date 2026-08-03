@@ -42,6 +42,23 @@ class EnvironmentFingerprintTest(unittest.TestCase):
         self.assertEqual(4, defaults["openmp_num_threads"])
         self.assertEqual(1, defaults["blas_num_threads"])
 
+    def test_fingerprint_includes_safe_git_launcher_and_package_ids(self) -> None:
+        profile = build_environment_fingerprint(
+            package_names=[],
+            git_revision="a" * 40,
+            git_clean=True,
+            launcher_profiles={"candidate-a": "launcher-a"},
+            package_digest_prefixes={"package-a": "123456789abc"},
+        )
+        data = profile.to_json()
+        rendered = json.dumps(data, ensure_ascii=False, sort_keys=True)
+
+        self.assertEqual("a" * 40, data["git"]["revision"])
+        self.assertTrue(data["git"]["clean"])
+        self.assertEqual("launcher-a", data["launcher_profiles"]["candidate-a"])
+        self.assertEqual("123456789abc", data["package_digest_prefixes"]["package-a"])
+        self.assertNotIn(str(ROOT), rendered)
+
 
 if __name__ == "__main__":
     unittest.main()
