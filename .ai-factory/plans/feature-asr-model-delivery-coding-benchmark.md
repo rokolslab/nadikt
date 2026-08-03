@@ -212,7 +212,7 @@ Commit 3 является обязательным code-freeze checkpoint: ре�
 
 <!-- Code-freeze checkpoint: task 10 -->
 
-- [ ] **Задача 11: Подготовить immutable model packages и coding-pilot assets вне Git**
+- [x] **Задача 11: Подготовить immutable model packages и coding-pilot assets вне Git**
 
   **Результат:** controlled storage содержит immutable packages, sidecar manifests, local inventory, legal-review records, `ru_coding_terms`, `ru_short` и non-scored warm-up WAV/reference assets с private bindings. Минимум один доступный candidate проходит real lifecycle gate; faster-whisper CTranslate2 CPU INT8 является первым практическим кандидатом, но не объявляется победителем. GigaAM добавляется только при подтверждённом `.ckpt`/tokenizer layout и approved local evaluation.
 

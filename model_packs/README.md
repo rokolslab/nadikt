@@ -68,6 +68,46 @@ Immutable package metadata lives in `model_package_manifest.example.json`; real 
 - Для проверки ignore policy используйте synthetic paths under ignored directories, например `local-packages/<package-id>/` и `benchmarks/asr/runs/<run-id>/`.
 - Reports и logs должны ссылаться на `package_id`, `candidate_id`, backend, phase/outcome codes и checksum prefixes, но не на абсолютные локальные пути.
 
+## Controlled Faster-Whisper Package Preparation
+
+Для coding-pilot real load используйте controlled storage вне Git:
+
+```text
+<controlled-model-root>/
+|-- inventory.json
+|-- faster-whisper-small-int8-local.manifest.json
+`-- packages/
+    `-- faster-whisper-small-int8-local/
+        |-- model.bin
+        |-- config.json
+        |-- tokenizer.json
+        `-- vocabulary.txt
+```
+
+Preparation-time acquisition may download `Systran/faster-whisper-small` or copy
+the same CTranslate2 directory from removable media. Runtime and benchmark runs
+must pass only `<controlled-model-root>/inventory.json`; they must not pass Hub
+IDs such as `small` or repository names as model input.
+
+The sidecar manifest must include full SHA-256 and `size_bytes` for every
+critical file, `local_evaluation=approved`, and separate `review_required`
+statuses for redistribution, bundling and installer download until legal review
+approves them. After manifest/inventory validation, make the package tree
+read-only for measured runs and keep any writable cache outside the package
+directory.
+
+Safe validation command:
+
+```powershell
+python3 -m benchmarks.asr.local_model_probe --models <controlled-model-root>/inventory.json --candidate faster-whisper-small-int8 --dry-run
+```
+
+Real lifecycle gate uses a controlled audio file and safe label:
+
+```powershell
+python3 -m benchmarks.asr.local_model_probe --models <controlled-model-root>/inventory.json --candidate faster-whisper-small-int8 --audio-file <controlled-dataset-root>/audio/warmup_001.wav --audio-label controlled-audio:warmup_001
+```
+
 ## Candidate Notes
 
 - GigaAM `.transcribe` is limited to short audio; long dictation must go through Nadikt segmentation.

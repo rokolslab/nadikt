@@ -129,6 +129,64 @@ transcript payload отсутствуют в JSON summary. Реальный `--a
 local inventory запуск выполняется той же командой без `--dry-run`, при внешне
 заблокированной сети.
 
+## ASR Coding Pilot Controlled Assets
+
+Coding-pilot real runs use controlled storage outside Git:
+
+```text
+<controlled-root>/
+|-- models/
+|   |-- inventory.json
+|   |-- <package-id>.manifest.json
+|   `-- packages/<package-id>/...
+|-- datasets/
+|   |-- audio/*.wav
+|   |-- references/*.txt
+|   `-- bindings.json
+|-- wheelhouse/<backend-profile>/
+|-- cache/
+`-- runs/
+```
+
+Requirements before a measured run:
+
+1. Build/install the benchmark venv from the controlled wheelhouse, not from an online index.
+2. Store real audio/reference files only under controlled storage outside Git.
+3. Validate private bindings against `benchmarks/asr/datasets/coding_pilot.v1.json`.
+4. Validate model package sidecar/inventory and make the model package tree read-only.
+5. Keep writable caches outside the immutable package directory.
+
+Reference validation command:
+
+```powershell
+python3 - <<'PY'
+from pathlib import Path
+from benchmarks.asr.dataset_bindings import validate_dataset_bindings
+result = validate_dataset_bindings(
+    Path('benchmarks/asr/datasets/coding_pilot.v1.json'),
+    Path('<controlled-root>/datasets/bindings.json'),
+    Path('<controlled-root>/datasets'),
+)
+print(result.outcome, len(result.resolved_samples), list(result.errors))
+PY
+```
+
+First lifecycle gate:
+
+```powershell
+python3 -m benchmarks.asr.local_model_probe --models <controlled-root>/models/inventory.json --candidate faster-whisper-small-int8 --audio-file <controlled-root>/datasets/audio/warmup_001.wav --audio-label controlled-audio:warmup_001
+```
+
+First coding-pilot runner command:
+
+```powershell
+python3 -m benchmarks.asr.benchmark_runner --inventory <controlled-root>/models/inventory.json --dataset-profile benchmarks/asr/datasets/coding_pilot.v1.json --private-bindings <controlled-root>/datasets/bindings.json --controlled-root <controlled-root>/datasets --candidate faster-whisper-small-int8 --repeats 3 --output <controlled-root>/runs/pilot-ru-coding-first.json
+```
+
+If external default-deny network observation is not active, the publishable
+artifact must keep `offline_evidence.status=NOT VERIFIED` even when load and
+transcription phases succeed.
+
 ## Manual Matrix
 
 Notepad, browser, Word, 1C, elevated target, Windows 10 и real image/file-list

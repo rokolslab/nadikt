@@ -36,6 +36,13 @@ Do not use `auto` thread settings in a measured run. If a backend requires a dif
 
 The fingerprint contains package versions and lock digest prefixes only. It must not contain hostname, username, interpreter path, argv, environment values, wheel/cache paths or proxy/credential settings.
 
+For the first faster-whisper coding pilot, the connected preparation step may
+materialize a wheelhouse for `faster-whisper==1.1.1`, `ctranslate2==4.6.0`,
+`tokenizers==0.21.0` and `numpy==2.2.2` plus resolved transitive wheels. The
+benchmark virtual environment must then be installed with `--no-index` from that
+wheelhouse. The run artifact records only package/version IDs and lock or
+wheelhouse digest prefixes, never the wheelhouse path.
+
 ## Lock Status
 
 Backend lock files are intentionally separate because faster-whisper and GigaAM may require incompatible native dependency closures. Before a real benchmark, replace any `REVIEW_REQUIRED` hash line with a generated hash-checked lock from the approved wheelhouse and keep the exact file digest in benchmark results.
