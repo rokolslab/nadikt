@@ -134,7 +134,7 @@ Commit 3 является обязательным code-freeze checkpoint: ре�
 
 ### Фаза 2: Dataset, metrics, adapters и offline worker
 
-- [ ] **Задача 5: Добавить versioned coding-pilot dataset contract и fail-closed controlled storage**
+- [x] **Задача 5: Добавить versioned coding-pilot dataset contract и fail-closed controlled storage**
 
   **Результат:** public metadata-only profiles покрывают `ru_coding_terms`, короткий `ru_short` regression set и отдельный non-scored warm-up sample. Private bindings вне Git однозначно связывают sample IDs с относительными audio/reference files и digests под явно переданным controlled root.
 
@@ -146,7 +146,7 @@ Commit 3 является обязательным code-freeze checkpoint: ре�
 
   **Зависимости:** задачи 1, 2 и 3.
 
-- [ ] **Задача 6: Реализовать occurrence-based coding-term metrics и воспроизводимое агрегирование**
+- [x] **Задача 6: Реализовать occurrence-based coding-term metrics и воспроизводимое агрегирование**
 
   **Результат:** term matching учитывает token/phrase boundaries, canonical spelling, frozen variants, expected occurrences и значимые символы (`_`, `.`, `/`, `-`, `+`) без substring false positives. WER/CER/term metrics возвращают numerator, denominator, value, status и version для corpus aggregation; raw ASR отделён от punctuation-sensitive и будущего post-normalization views.
 
@@ -158,7 +158,7 @@ Commit 3 является обязательным code-freeze checkpoint: ре�
 
   **Зависимости:** задача 5.
 
-- [ ] **Задача 7: Уточнить SDK-neutral lifecycle contract для real warm-up и safe instrumentation**
+- [x] **Задача 7: Уточнить SDK-neutral lifecycle contract для real warm-up и safe instrumentation**
 
   **Результат:** `AsrEngine` выражает actual inference warm-up на проверенном non-scored segment, typed safe failures и SDK-neutral timing/inference observer для `load_done`, `first_result`, `transcribe_done`. Контракт не содержит benchmark DTO или SDK types.
 

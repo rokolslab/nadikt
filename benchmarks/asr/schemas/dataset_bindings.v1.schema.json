@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nadikt.local/schemas/dataset_bindings.v1.schema.json",
+  "title": "Nadikt Dataset Bindings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "bindings_id", "public_manifest_sha256", "samples"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "bindings_id": {"type": "string", "minLength": 1},
+    "public_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "samples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sample_id",
+          "audio_relative_path",
+          "audio_sha256",
+          "reference_relative_path",
+          "reference_sha256",
+          "rights_status",
+          "consent_status"
+        ],
+        "properties": {
+          "sample_id": {"type": "string", "minLength": 1},
+          "audio_relative_path": {"type": "string", "minLength": 1},
+          "audio_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "reference_relative_path": {"type": "string", "minLength": 1},
+          "reference_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "rights_status": {"enum": ["approved", "review_required", "prohibited"]},
+          "consent_status": {"enum": ["synthetic", "anonymized", "approved_recording", "review_required"]}
+        }
+      }
+    }
+  }
+}

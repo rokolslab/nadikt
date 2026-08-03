@@ -22,6 +22,7 @@ REQUIRED_CATEGORIES = {
     "long_10m",
     "boundary_cases",
 }
+ALLOWED_DATASET_MANIFEST_KINDS = {"example", "full_benchmark", "dataset_profile", "coding_pilot"}
 ALLOWED_BACKENDS = {"gigaam", "faster-whisper", "tone", "other-local"}
 FORBIDDEN_SAMPLE_KEYS = {"audio_path", "transcript", "reference_text", "hypothesis", "text"}
 FORBIDDEN_MODEL_IDENTIFIERS = {"tiny", "base", "small", "medium", "large", "large-v2", "large-v3"}
@@ -48,6 +49,7 @@ class SampleManifest:
     reference_label: str
     expected_english_terms: tuple[str, ...]
     segmentation_policy_id: str
+    expected_coding_terms: tuple[Mapping[str, Any], ...] = ()
 
     def __repr__(self) -> str:
         return (
@@ -129,6 +131,9 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
     errors: list[str] = []
     if data.get("schema_version") != 1:
         errors.append("invalid_schema_version")
+    manifest_kind = str(data.get("manifest_kind", "full_benchmark"))
+    if manifest_kind not in ALLOWED_DATASET_MANIFEST_KINDS:
+        errors.append("invalid_manifest_kind")
 
     samples_data = data.get("samples")
     if not isinstance(samples_data, list) or not samples_data:
@@ -136,6 +141,7 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
 
     samples: list[SampleManifest] = []
     seen_categories: set[str] = set()
+    seen_sample_ids: set[str] = set()
     for index, item in enumerate(samples_data):
         if not isinstance(item, Mapping):
             errors.append(f"sample_{index}_not_object")
@@ -160,15 +166,22 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
             continue
 
         category = str(item["category"])
+        sample_id = str(item["sample_id"])
         duration_value = item["duration_seconds"]
         if isinstance(duration_value, bool) or not isinstance(duration_value, (int, float)):
             errors.append(f"sample_{index}_invalid_duration_type")
             continue
         duration = float(duration_value)
         if category not in REQUIRED_CATEGORIES:
-            errors.append(f"sample_{index}_invalid_category")
+            if not (manifest_kind in {"dataset_profile", "coding_pilot"} and category in {"ru_coding_terms", "warmup"}):
+                errors.append(f"sample_{index}_invalid_category")
         if duration <= 0:
             errors.append(f"sample_{index}_invalid_duration")
+        if not sample_id:
+            errors.append(f"sample_{index}_empty_sample_id")
+        elif sample_id in seen_sample_ids:
+            errors.append(f"sample_{index}_duplicate_sample_id")
+        seen_sample_ids.add(sample_id)
         if category == "long_10m" and duration < 600:
             errors.append(f"sample_{index}_long_10m_too_short")
         if _is_unsafe_path_label(str(item["audio_label"])):
@@ -185,9 +198,17 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
             continue
 
         terms = tuple(expected_terms)
+        expected_coding_terms = item.get("expected_coding_terms", [])
+        if not isinstance(expected_coding_terms, list):
+            errors.append(f"sample_{index}_expected_coding_terms_not_list")
+            continue
+        coding_term_errors = _validate_expected_coding_terms(index, expected_coding_terms)
+        if coding_term_errors:
+            errors.extend(coding_term_errors)
+            continue
         samples.append(
             SampleManifest(
-                sample_id=str(item["sample_id"]),
+                sample_id=sample_id,
                 category=category,
                 duration_seconds=duration,
                 language_profile=str(item["language_profile"]),
@@ -195,11 +216,12 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
                 reference_label=str(item["reference_label"]),
                 expected_english_terms=terms,
                 segmentation_policy_id=str(item["segmentation_policy_id"]),
+                expected_coding_terms=tuple(dict(term) for term in expected_coding_terms),
             )
         )
         seen_categories.add(category)
 
-    if data.get("manifest_kind") != "example":
+    if manifest_kind == "full_benchmark":
         missing_categories = REQUIRED_CATEGORIES.difference(seen_categories)
         if missing_categories:
             errors.append("missing_categories:" + ",".join(sorted(missing_categories)))
@@ -209,6 +231,39 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
         extra={"sample_count": len(samples), "error_count": len(errors)},
     )
     return samples, errors
+
+
+def _validate_expected_coding_terms(sample_index: int, terms: list[object]) -> list[str]:
+    errors: list[str] = []
+    seen: set[str] = set()
+    for term_index, term in enumerate(terms):
+        if not isinstance(term, Mapping):
+            errors.append(f"sample_{sample_index}_term_{term_index}_not_object")
+            continue
+        required = ["term_id", "canonical", "accepted_variants", "expected_occurrences", "require_latin"]
+        missing = [field for field in required if field not in term]
+        if missing:
+            errors.append(f"sample_{sample_index}_term_{term_index}_missing:{','.join(missing)}")
+            continue
+        term_id = term["term_id"]
+        canonical = term["canonical"]
+        variants = term["accepted_variants"]
+        occurrences = term["expected_occurrences"]
+        require_latin = term["require_latin"]
+        if not isinstance(term_id, str) or not term_id:
+            errors.append(f"sample_{sample_index}_term_{term_index}_invalid_term_id")
+        elif term_id in seen:
+            errors.append(f"sample_{sample_index}_term_{term_index}_duplicate_term_id")
+        seen.add(str(term_id))
+        if not isinstance(canonical, str) or not canonical:
+            errors.append(f"sample_{sample_index}_term_{term_index}_invalid_canonical")
+        if not isinstance(variants, list) or not all(isinstance(item, str) and item for item in variants):
+            errors.append(f"sample_{sample_index}_term_{term_index}_invalid_variants")
+        if isinstance(occurrences, bool) or not isinstance(occurrences, int) or occurrences <= 0:
+            errors.append(f"sample_{sample_index}_term_{term_index}_invalid_occurrences")
+        if not isinstance(require_latin, bool):
+            errors.append(f"sample_{sample_index}_term_{term_index}_invalid_require_latin")
+    return errors
 
 
 def validate_model_inventory(data: Mapping[str, Any]) -> tuple[list[ModelPackageManifest], list[str]]:

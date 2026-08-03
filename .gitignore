@@ -38,6 +38,7 @@ benchmarks/asr/**/*reference*.txt
 benchmarks/asr/**/*hypothesis*.txt
 benchmarks/asr/datasets/audio/
 benchmarks/asr/datasets/references/
+benchmarks/asr/datasets/*bindings*.json
 
 # Python local artifacts.
 __pycache__/

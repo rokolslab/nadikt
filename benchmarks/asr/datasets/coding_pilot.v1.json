@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "manifest_kind": "coding_pilot",
+  "dataset_id": "nadikt-coding-pilot",
+  "dataset_revision": "coding-pilot-v1",
+  "storage_policy": "Raw audio and reference transcripts are stored outside Git in controlled storage.",
+  "samples": [
+    {
+      "sample_id": "warmup_001",
+      "category": "warmup",
+      "duration_seconds": 5.0,
+      "language_profile": "ru",
+      "audio_label": "controlled-audio:warmup_001",
+      "reference_label": "controlled-reference:warmup_001",
+      "expected_english_terms": [],
+      "expected_coding_terms": [],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Non-scored warm-up sample."
+    },
+    {
+      "sample_id": "ru_short_001",
+      "category": "ru_short",
+      "duration_seconds": 12.0,
+      "language_profile": "ru",
+      "audio_label": "controlled-audio:ru_short_001",
+      "reference_label": "controlled-reference:ru_short_001",
+      "expected_english_terms": [],
+      "expected_coding_terms": [],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Short Russian regression sample metadata."
+    },
+    {
+      "sample_id": "ru_coding_terms_001",
+      "category": "ru_coding_terms",
+      "duration_seconds": 14.0,
+      "language_profile": "ru_coding_terms",
+      "audio_label": "controlled-audio:ru_coding_terms_001",
+      "reference_label": "controlled-reference:ru_coding_terms_001",
+      "expected_english_terms": ["pytest", "FastAPI route"],
+      "expected_coding_terms": [
+        {"term_id": "pytest", "canonical": "pytest", "accepted_variants": ["pytest"], "expected_occurrences": 1, "require_latin": true},
+        {"term_id": "fastapi-route", "canonical": "FastAPI route", "accepted_variants": ["FastAPI route", "FastAPI-route"], "expected_occurrences": 1, "require_latin": true}
+      ],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Scored coding-term sample metadata."
+    },
+    {
+      "sample_id": "ru_coding_terms_002",
+      "category": "ru_coding_terms",
+      "duration_seconds": 16.0,
+      "language_profile": "ru_coding_terms",
+      "audio_label": "controlled-audio:ru_coding_terms_002",
+      "reference_label": "controlled-reference:ru_coding_terms_002",
+      "expected_english_terms": ["docker compose", "React component"],
+      "expected_coding_terms": [
+        {"term_id": "docker-compose", "canonical": "docker compose", "accepted_variants": ["docker compose", "docker-compose"], "expected_occurrences": 1, "require_latin": true},
+        {"term_id": "react-component", "canonical": "React component", "accepted_variants": ["React component", "React-компонент"], "expected_occurrences": 1, "require_latin": true}
+      ],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Scored coding-term sample metadata."
+    },
+    {
+      "sample_id": "ru_coding_terms_003",
+      "category": "ru_coding_terms",
+      "duration_seconds": 18.0,
+      "language_profile": "ru_coding_terms",
+      "audio_label": "controlled-audio:ru_coding_terms_003",
+      "reference_label": "controlled-reference:ru_coding_terms_003",
+      "expected_english_terms": ["access token", "pull request"],
+      "expected_coding_terms": [
+        {"term_id": "access-token", "canonical": "access token", "accepted_variants": ["access token", "access-token"], "expected_occurrences": 1, "require_latin": true},
+        {"term_id": "pull-request", "canonical": "pull request", "accepted_variants": ["pull request", "pull-request"], "expected_occurrences": 1, "require_latin": true}
+      ],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Scored coding-term sample metadata."
+    }
+  ]
+}

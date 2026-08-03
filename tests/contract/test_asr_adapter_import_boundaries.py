@@ -31,6 +31,8 @@ class AsrAdapterImportBoundariesTest(unittest.TestCase):
         source = (SRC / "nadikt/domain/ports/asr.py").read_text(encoding="utf-8")
 
         self.assertNotIn("nadikt.infrastructure", source)
+        self.assertNotIn("benchmarks.asr", source)
+        self.assertNotIn("ProbePhaseResult", source)
         self.assertIsNone(re.search(r"^\s*(from|import)\s+faster_whisper", source, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*(from|import)\s+gigaam", source, re.MULTILINE))
 
