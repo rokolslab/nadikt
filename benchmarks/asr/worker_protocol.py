@@ -13,6 +13,7 @@ PROTOCOL_VERSION = 1
 PROTOCOL_VERSION_V2 = 2
 MAX_MESSAGE_BYTES = 128 * 1024
 WORKER_STATUSES = {"success", "fail", "not_run", "protocol_error"}
+SUPERVISOR_OUTCOMES = {"completed", "timeout", "terminated", "killed", "protocol_error", "privacy_error", "spawn_error", "nonzero_exit"}
 PHASE_OUTCOMES = {"success", "fail", "not_run", "readiness_failed", "protocol_error", "unsupported_backend", "checksum_mismatch"}
 SAMPLE_OUTCOMES = {"success", "fail", "not_run", "skipped"}
 REPEAT_OUTCOMES = {"success", "fail", "not_run"}
@@ -609,6 +610,7 @@ __all__ = [
     "MAX_MESSAGE_BYTES",
     "PROTOCOL_VERSION",
     "PROTOCOL_VERSION_V2",
+    "SUPERVISOR_OUTCOMES",
     "WorkerMetricResult",
     "WorkerPhase",
     "WorkerRepeatOutcome",

@@ -5,21 +5,34 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
 from .privacy_audit import audit_text_artifact
 from .resource_measurement import ResourcePointSample, ResourceReport, ResourceSampler, create_default_resource_sampler
-from .worker_protocol import WorkerRequest, WorkerRequestV2, WorkerResult, WorkerResultV2, loads_result, loads_result_v2
+from .worker_protocol import SUPERVISOR_OUTCOMES, WorkerPhase, WorkerRepeatOutcome, WorkerRequest, WorkerRequestV2, WorkerResult, WorkerResultV2, loads_result, loads_result_v2
 
 SamplerFactory = Callable[[], ResourceSampler | None]
 PopenFactory = Callable[..., subprocess.Popen[str]]
 
 
 @dataclass(frozen=True)
+class SupervisorEvent:
+    event: str
+    outcome: str
+    elapsed_ms: float
+
+    def to_json(self) -> dict[str, object]:
+        return {"event": self.event, "outcome": self.outcome, "elapsed_ms": round(self.elapsed_ms, 3)}
+
+
+@dataclass(frozen=True)
 class SupervisedWorkerResult:
     worker_result: WorkerResult | WorkerResultV2
     resource_report: ResourceReport
+    supervisor_outcome: str = "completed"
+    timeline: tuple[SupervisorEvent, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -31,36 +44,77 @@ class WorkerSupervisor:
     popen_factory: PopenFactory = subprocess.Popen
 
     def run(self, request: WorkerRequest | WorkerRequestV2) -> SupervisedWorkerResult:
-        process = self.popen_factory(
-            [sys.executable, "-m", "benchmarks.asr.benchmark_worker"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        sampler = self.sampler_factory()
+        timeline = _Timeline()
+        try:
+            process = self.popen_factory(
+                [sys.executable, "-m", "benchmarks.asr.benchmark_worker"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            timeline.add("spawn", "completed")
+        except Exception:
+            timeline.add("spawn", "spawn_error")
+            return SupervisedWorkerResult(
+                _failure_worker_result(request, "fail", "spawn_error"),
+                ResourceReport.unavailable("unavailable", "none", self._interval_ms(), "spawn_error"),
+                "spawn_error",
+                timeline.events,
+            )
+        try:
+            sampler = self.sampler_factory()
+        except Exception:
+            sampler = None
+            timeline.add("sampler", "unavailable")
         collector = _ResourceCollector(sampler, sample_interval_seconds=self.sample_interval_seconds)
         collector.start(int(getattr(process, "pid", 0) or 0))
+        supervisor_outcome = "completed"
+        stdout = ""
+        stderr = ""
         try:
             stdout, stderr = process.communicate(input=request.to_worker_json(), timeout=self.timeout_seconds)
+            timeline.add("communicate", "completed")
         except subprocess.TimeoutExpired:
+            supervisor_outcome = "timeout"
             collector.note_missed("worker_timeout")
+            timeline.add("communicate", "timeout")
             process.terminate()
             try:
                 stdout, stderr = process.communicate(timeout=self.terminate_grace_seconds)
                 collector.note_missed("worker_terminated")
+                supervisor_outcome = "terminated"
+                timeline.add("terminate", "terminated")
             except subprocess.TimeoutExpired:
                 process.kill()
                 stdout, stderr = process.communicate()
                 collector.note_missed("worker_killed")
+                supervisor_outcome = "killed"
+                timeline.add("kill", "killed")
         resource_report = collector.finish()
+        timeline.add("resource_collection", resource_report.status)
         audit = audit_text_artifact((stdout or "") + (stderr or ""), canary="NADIKT_CONTROLLED_CANARY")
         if audit.canary_present or audit.forbidden_payload_count:
-            raise ValueError("worker_output_privacy_violation")
-        result = _loads_worker_result(stdout or "")
+            timeline.add("privacy_audit", "privacy_error")
+            return SupervisedWorkerResult(_failure_worker_result(request, "fail", "privacy_error"), resource_report, "privacy_error", timeline.events)
+        timeline.add("privacy_audit", "completed")
+        try:
+            result = _loads_worker_result(stdout or "")
+        except Exception:
+            timeline.add("parse", "protocol_error")
+            return SupervisedWorkerResult(_failure_worker_result(request, "protocol_error", "protocol_error"), resource_report, "protocol_error", timeline.events)
         if result.nonce != request.nonce:
-            raise ValueError("worker_result_nonce_mismatch")
-        return SupervisedWorkerResult(result, resource_report)
+            timeline.add("nonce", "protocol_error")
+            return SupervisedWorkerResult(_failure_worker_result(request, "protocol_error", "protocol_error"), resource_report, "protocol_error", timeline.events)
+        timeline.add("parse", "completed")
+        return_code = getattr(process, "returncode", 0)
+        if isinstance(return_code, int) and return_code != 0 and supervisor_outcome == "completed":
+            supervisor_outcome = "nonzero_exit"
+            timeline.add("exit_status", "nonzero_exit")
+        return SupervisedWorkerResult(result, resource_report, supervisor_outcome, timeline.events)
+
+    def _interval_ms(self) -> int:
+        return max(1, int(round(self.sample_interval_seconds * 1000)))
 
 
 def _loads_worker_result(text: str) -> WorkerResult | WorkerResultV2:
@@ -70,6 +124,41 @@ def _loads_worker_result(text: str) -> WorkerResult | WorkerResultV2:
         if str(error) != "invalid_worker_protocol_version":
             raise
     return loads_result(text)
+
+
+def _failure_worker_result(request: WorkerRequest | WorkerRequestV2, worker_status: str, outcome: str) -> WorkerResult | WorkerResultV2:
+    phase = WorkerPhase("supervisor", "protocol_error" if outcome == "protocol_error" else "fail")
+    if isinstance(request, WorkerRequestV2):
+        return WorkerResultV2(
+            nonce=request.nonce,
+            package_id=request.package_id,
+            candidate_id=request.candidate_id,
+            backend=request.backend,
+            worker_status=worker_status,
+            repeat=WorkerRepeatOutcome(request.repeat.repeat_index, "fail", phases=(phase,), samples=()),
+        )
+    return WorkerResult(
+        nonce=request.nonce,
+        package_id=request.package_id,
+        candidate_id=request.candidate_id,
+        backend=request.backend,
+        worker_status=worker_status,
+        phases=(phase,),
+    )
+
+
+@dataclass
+class _Timeline:
+    started: float = field(default_factory=time.monotonic)
+    _events: list[SupervisorEvent] = field(default_factory=list)
+
+    @property
+    def events(self) -> tuple[SupervisorEvent, ...]:
+        return tuple(self._events)
+
+    def add(self, event: str, outcome: str) -> None:
+        safe_outcome = outcome if outcome in SUPERVISOR_OUTCOMES or outcome in {"ok", "partial", "unavailable"} else "completed"
+        self._events.append(SupervisorEvent(event, safe_outcome, (time.monotonic() - self.started) * 1000))
 
 
 @dataclass
@@ -135,4 +224,4 @@ class _ResourceCollector:
         return max(1, int(round(self.sample_interval_seconds * 1000)))
 
 
-__all__ = ["SupervisedWorkerResult", "WorkerSupervisor"]
+__all__ = ["SUPERVISOR_OUTCOMES", "SupervisedWorkerResult", "SupervisorEvent", "WorkerSupervisor"]

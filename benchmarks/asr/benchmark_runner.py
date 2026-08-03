@@ -175,12 +175,13 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
             result = supervised.worker_result
             if not hasattr(result, "repeat"):
                 raise ValueError("worker_result_v2_required")
+            phase_outcomes["supervisor"] = supervised.supervisor_outcome
             phase_outcomes.update({phase.phase: phase.outcome for phase in result.repeat.phases})
             for sample in result.repeat.samples:
                 if sample.scored:
                     _collect_sample_metrics(quality_results, sample.metrics)
             resource_samples.append(_resource_sample_v2(tuple(sample for sample in result.repeat.samples if sample.scored), scored_samples, supervised.resource_report))
-            if result.worker_status == "success" and result.repeat.outcome == "success":
+            if supervised.supervisor_outcome == "completed" and result.worker_status == "success" and result.repeat.outcome == "success":
                 completed += 1
         aggregates.append(
             CandidateAggregate(
