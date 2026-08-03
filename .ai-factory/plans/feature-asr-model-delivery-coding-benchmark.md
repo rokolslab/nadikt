@@ -198,7 +198,7 @@ Commit 3 является обязательным code-freeze checkpoint: ре�
 
 ### Фаза 3: Runner, controlled assets, pilot и публикация
 
-- [ ] **Задача 10: Реализовать privacy-safe benchmark CLI, result schema и worker resource sampling**
+- [x] **Задача 10: Реализовать privacy-safe benchmark CLI, result schema и worker resource sampling**
 
   **Результат:** benchmark CLI запускает по одному spawned candidate worker на independent cold repeat, использует coding-pilot profile/private bindings/offline supervisor и атомарно создаёт schema-validated safe result. Reference/hypothesis остаются внутри worker; parent получает только numeric metrics, timings и outcome codes.
 
