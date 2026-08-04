@@ -7,6 +7,8 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Mapping
 
+from .coding_term_normalization import DEFAULT_NORMALIZATION_POLICY_ID, normalize_coding_terms_for_scoring
+
 TOKEN_RE = re.compile(r"[0-9A-Za-zА-Яа-яЁё_./+\-]+", re.UNICODE)
 METRIC_VERSION = "quality-metrics-v2"
 
@@ -59,8 +61,9 @@ class MetricDiagnostic:
             "numerator": self.numerator,
             "denominator": self.denominator,
             "status": self.status,
-            "value": self.value,
-            "version": self.version,
+            "reason_code": self.reason_code,
+            "count": self.count,
+            "view": self.view,
         }
 
 
@@ -152,6 +155,20 @@ def aggregate_corpus(metric_name: str, results: list[QualityMetricResult]) -> Qu
     return QualityMetricResult(metric_name=metric_name, value=numerator / denominator, numerator=numerator, denominator=denominator)
 
 
+def normalized_coding_term_metrics(
+    term_records: list[Mapping[str, object]],
+    hypothesis: str,
+    *,
+    policy_id: str = DEFAULT_NORMALIZATION_POLICY_ID,
+) -> tuple[QualityMetricResult, ...]:
+    normalized_hypothesis = normalize_coding_terms_for_scoring(hypothesis, policy_id=policy_id)
+    return (
+        _renamed_metric(english_term_accuracy_from_records(term_records, normalized_hypothesis), "english_term_accuracy_normalized"),
+        _renamed_metric(latin_preservation_rate_from_records(term_records, normalized_hypothesis), "latin_preservation_rate_normalized"),
+        _renamed_metric(coding_term_accuracy(term_records, normalized_hypothesis), "coding_term_accuracy_normalized"),
+    )
+
+
 def metric_diagnostics(result: QualityMetricResult, *, view: str = "raw") -> tuple[MetricDiagnostic, ...]:
     if result.status == "not_applicable" or result.denominator == 0:
         return (_diagnostic(result, "not_applicable", max(1, result.denominator), view=view),)
@@ -182,6 +199,17 @@ def _diagnostic(result: QualityMetricResult, reason_code: str, count: int, *, vi
         denominator=result.denominator,
         reason_code=reason_code,
         count=max(0, count),
+    )
+
+
+def _renamed_metric(result: QualityMetricResult, metric_name: str) -> QualityMetricResult:
+    return QualityMetricResult(
+        metric_name=metric_name,
+        value=result.value,
+        numerator=result.numerator,
+        denominator=result.denominator,
+        status=result.status,
+        version=f"{result.version}:{DEFAULT_NORMALIZATION_POLICY_ID}",
     )
 
 

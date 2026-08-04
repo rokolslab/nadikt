@@ -295,6 +295,38 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
         self.assertEqual(3, metrics["english_term_accuracy"].denominator)
         self.assertEqual(1, metrics["latin_preservation_rate"].numerator)
         self.assertEqual(2, metrics["latin_preservation_rate"].denominator)
+        self.assertIn("english_term_accuracy_normalized", metrics)
+        self.assertIn("latin_preservation_rate_normalized", metrics)
+        self.assertIn("coding_term_accuracy_normalized", metrics)
+
+    def test_worker_emits_normalized_metrics_and_diagnostics_as_separate_view(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            audio = root / "scored.wav"
+            reference = root / "reference.txt"
+            audio.write_bytes(b"synthetic")
+            reference.write_text("synthetic reference", encoding="utf-8")
+            sample = WorkerSampleRequest(
+                sample_id="scored_001",
+                category="ru_coding_terms",
+                audio_file=audio,
+                reference_file=reference,
+                duration_seconds=1.0,
+                scored=True,
+                expected_coding_terms=(
+                    {"canonical": "pytest", "accepted_variants": ["pytest"], "expected_occurrences": 1, "require_latin": True},
+                    {"canonical": "pull request", "accepted_variants": ["pull request"], "expected_occurrences": 1, "require_latin": True},
+                ),
+            )
+
+            metrics = {metric.metric_name: metric for metric in benchmark_worker._sample_metrics(sample, "пайтест и пул реквест")}
+            diagnostics = benchmark_worker._worker_metric_diagnostics(sample, benchmark_worker._quality_metric_results(sample, "пайтест и пул реквест"))
+
+        self.assertEqual(0, metrics["coding_term_accuracy"].numerator)
+        self.assertEqual(2, metrics["coding_term_accuracy_normalized"].numerator)
+        self.assertIn("coding-term-normalization-ru-pronunciation-v1", metrics["coding_term_accuracy_normalized"].metric_version)
+        self.assertIn("raw", {diagnostic.view for diagnostic in diagnostics})
+        self.assertIn("normalized", {diagnostic.view for diagnostic in diagnostics})
 
     def test_worker_result_v2_round_trips_safe_metric_diagnostics(self) -> None:
         result = WorkerResultV2(

@@ -22,7 +22,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "repeat_outcomes", "quality_aggregates", "quality_diagnostics", "resource_aggregates"],
+        "required": ["candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "phase_outcomes", "repeat_outcomes", "quality_aggregates", "quality_diagnostics", "resource_aggregates"],
         "properties": {
           "candidate_id": {"type": "string", "minLength": 1},
           "package_id": {"type": "string", "minLength": 1},
@@ -30,6 +30,7 @@
           "repeats_requested": {"type": "integer", "minimum": 0},
           "repeats_completed": {"type": "integer", "minimum": 0},
           "outcome": {"type": "string", "enum": ["success", "fail", "not_run"]},
+          "phase_outcomes": {"type": "object"},
           "quality_aggregates": {"type": "object"},
           "resource_aggregates": {"type": "object"},
           "quality_diagnostics": {"type": "array", "items": {"$ref": "#/$defs/metric_diagnostic"}},

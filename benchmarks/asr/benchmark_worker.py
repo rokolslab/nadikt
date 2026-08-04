@@ -34,6 +34,7 @@ from .quality_metrics import (
     latin_preservation_rate,
     latin_preservation_rate_from_records,
     metric_diagnostics,
+    normalized_coding_term_metrics,
     wer,
 )
 from .worker_protocol import (
@@ -214,6 +215,8 @@ def _quality_metrics(request: WorkerRequest, hypothesis: str) -> dict[str, dict[
         _latin_metric(expected_coding_terms, expected_english_terms, hypothesis),
         coding_term_accuracy(expected_coding_terms, hypothesis),
     ]
+    if expected_coding_terms:
+        metrics.extend(normalized_coding_term_metrics(expected_coding_terms, hypothesis))
     return {metric.metric_name: metric.to_json() for metric in metrics}
 
 
@@ -227,13 +230,16 @@ def _quality_metric_results(sample: WorkerSampleRequest, hypothesis: str) -> lis
     reference = sample.reference_file.read_text(encoding="utf-8")
     expected_coding_terms = list(sample.expected_coding_terms)
     expected_english_terms = list(sample.expected_english_terms)
-    return [
+    metrics = [
         wer(reference, hypothesis),
         cer(reference, hypothesis),
         _english_metric(expected_coding_terms, expected_english_terms, hypothesis),
         _latin_metric(expected_coding_terms, expected_english_terms, hypothesis),
         coding_term_accuracy(expected_coding_terms, hypothesis),
     ]
+    if expected_coding_terms:
+        metrics.extend(normalized_coding_term_metrics(expected_coding_terms, hypothesis))
+    return metrics
 
 
 def _worker_metrics(metrics: list[QualityMetricResult]) -> tuple[WorkerMetricResult, ...]:
@@ -243,9 +249,10 @@ def _worker_metrics(metrics: list[QualityMetricResult]) -> tuple[WorkerMetricRes
 def _worker_metric_diagnostics(sample: WorkerSampleRequest, metrics: list[QualityMetricResult]) -> tuple[WorkerMetricDiagnostic, ...]:
     diagnostics: list[WorkerMetricDiagnostic] = []
     for metric in metrics:
-        if metric.metric_name not in {"coding_term_accuracy", "english_term_accuracy", "latin_preservation_rate"}:
+        if _term_metric_view(metric.metric_name) is None:
             continue
-        for diagnostic in metric_diagnostics(metric):
+        view = _term_metric_view(metric.metric_name) or "raw"
+        for diagnostic in metric_diagnostics(metric, view=view):
             diagnostics.append(
                 WorkerMetricDiagnostic(
                     sample_id=sample.sample_id,
@@ -260,6 +267,16 @@ def _worker_metric_diagnostics(sample: WorkerSampleRequest, metrics: list[Qualit
                 )
             )
     return tuple(diagnostics)
+
+
+def _term_metric_view(metric_name: str) -> str | None:
+    raw_names = {"coding_term_accuracy", "english_term_accuracy", "latin_preservation_rate"}
+    normalized_names = {f"{name}_normalized" for name in raw_names}
+    if metric_name in raw_names:
+        return "raw"
+    if metric_name in normalized_names:
+        return "normalized"
+    return None
 
 
 def _english_metric(expected_coding_terms: list[object], expected_english_terms: list[str], hypothesis: str) -> QualityMetricResult:

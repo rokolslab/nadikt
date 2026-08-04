@@ -36,7 +36,7 @@ ALLOWED_TOP_LEVEL_KEYS_V2 = {
     "validity",
     "outcome",
 }
-ALLOWED_CANDIDATE_KEYS_V2 = {"candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "repeat_outcomes", "quality_aggregates", "quality_diagnostics", "resource_aggregates"}
+ALLOWED_CANDIDATE_KEYS_V2 = {"candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "phase_outcomes", "repeat_outcomes", "quality_aggregates", "quality_diagnostics", "resource_aggregates"}
 ALLOWED_REPEAT_KEYS_V2 = {"repeat_index", "outcome", "phase_outcomes", "sample_outcomes"}
 ALLOWED_SAMPLE_KEYS_V2 = {"sample_id", "category", "scored", "outcome", "phase_outcomes", "metrics", "metric_diagnostics"}
 ALLOWED_PHASE_KEYS_V2 = {"phase", "outcome", "duration_ms"}
@@ -57,6 +57,7 @@ class CandidateAggregate:
     quality_aggregates: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
     resource_aggregates: Mapping[str, object] = field(default_factory=dict)
     quality_diagnostics: tuple[Mapping[str, object], ...] = field(default_factory=tuple)
+    repeat_outcomes: tuple[Mapping[str, object], ...] = field(default_factory=tuple)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -70,6 +71,7 @@ class CandidateAggregate:
             "quality_aggregates": {name: dict(value) for name, value in sorted(self.quality_aggregates.items())},
             "quality_diagnostics": [dict(value) for value in self.quality_diagnostics],
             "resource_aggregates": dict(sorted(self.resource_aggregates.items())),
+            "repeat_outcomes": [dict(value) for value in self.repeat_outcomes],
         }
 
 
@@ -85,10 +87,12 @@ class BenchmarkResult:
     privacy: Mapping[str, object]
     outcome: str
     settings: Mapping[str, object] = field(default_factory=dict)
+    validity: Mapping[str, object] = field(default_factory=dict)
+    schema_version: int = 2
 
     def to_json(self) -> dict[str, object]:
         payload = {
-            "schema_version": 1,
+            "schema_version": self.schema_version,
             "run_id": self.run_id,
             "run_kind": self.run_kind,
             "nadikt_revision": self.nadikt_revision,
@@ -100,6 +104,8 @@ class BenchmarkResult:
             "privacy": dict(self.privacy),
             "outcome": self.outcome,
         }
+        if self.schema_version == 2:
+            payload["validity"] = dict(self.validity)
         validate_result_payload(payload)
         return payload
 

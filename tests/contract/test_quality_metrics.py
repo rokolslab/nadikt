@@ -20,6 +20,7 @@ from benchmarks.asr.quality_metrics import (
     latin_preservation_rate,
     latin_preservation_rate_from_records,
     metric_diagnostics,
+    normalized_coding_term_metrics,
     wer,
 )
 
@@ -141,6 +142,21 @@ class QualityMetricsTest(unittest.TestCase):
         self.assertEqual("latin_missing", diagnostics[0].reason_code)
         self.assertEqual(2, diagnostics[0].count)
         self.assertEqual("raw", diagnostics[0].view)
+
+    def test_normalized_coding_term_metrics_are_separate_from_raw_metrics(self) -> None:
+        records = [
+            {"canonical": "pytest", "accepted_variants": ["pytest"], "expected_occurrences": 1, "require_latin": True},
+            {"canonical": "pull request", "accepted_variants": ["pull request"], "expected_occurrences": 1, "require_latin": True},
+        ]
+        raw = coding_term_accuracy(records, "пайтест и пул реквест")
+
+        normalized = {metric.metric_name: metric for metric in normalized_coding_term_metrics(records, "пайтест и пул реквест")}
+
+        self.assertEqual(0, raw.numerator)
+        self.assertEqual(2, normalized["coding_term_accuracy_normalized"].numerator)
+        self.assertEqual(2, normalized["english_term_accuracy_normalized"].numerator)
+        self.assertEqual(2, normalized["latin_preservation_rate_normalized"].numerator)
+        self.assertIn("coding-term-normalization-ru-pronunciation-v1", normalized["coding_term_accuracy_normalized"].version)
 
     def test_zero_denominator_is_not_applicable(self) -> None:
         result = coding_term_accuracy([], "любой текст")

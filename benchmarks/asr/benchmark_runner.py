@@ -88,6 +88,15 @@ def run_benchmark(
     }
     evidence = unverified_evidence(run_id).to_json()
     git_revision = _git_revision(full=True)
+    git_clean = _git_clean()
+    validity = _publication_validity(
+        outcome=outcome,
+        aggregates=aggregates,
+        run_profile=run_profile,
+        selected=selected,
+        offline_evidence=evidence,
+        git_clean=git_clean,
+    )
     result = BenchmarkResult(
         run_id=run_id,
         run_kind=run_kind,
@@ -109,6 +118,7 @@ def run_benchmark(
         offline_evidence=evidence,
         privacy=privacy_payload,
         outcome=outcome,
+        validity=validity,
     )
     rendered = json.dumps(result.to_json(), ensure_ascii=False, sort_keys=True)
     audit = audit_text_artifact(rendered, canary="NADIKT_CONTROLLED_CANARY")
@@ -171,6 +181,7 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
         quality_results: dict[str, list[dict[str, object]]] = {}
         quality_diagnostics: list[dict[str, object]] = []
         resource_samples: list[dict[str, object]] = []
+        repeat_outcomes: list[dict[str, object]] = []
         package_dir = (inventory_root / package.package_path).resolve(strict=False)
         for repeat_index in range(repeats):
             request = WorkerRequestV2(
@@ -190,6 +201,7 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
                 raise ValueError("worker_result_v2_required")
             phase_outcomes["supervisor"] = supervised.supervisor_outcome
             phase_outcomes.update({phase.phase: phase.outcome for phase in result.repeat.phases})
+            repeat_outcomes.append(_repeat_outcome_json(result.repeat))
             for sample in result.repeat.samples:
                 if sample.scored:
                     _collect_sample_metrics(quality_results, sample.metrics, sample.category)
@@ -209,6 +221,7 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
                 quality_aggregates=_aggregate_quality_results(quality_results),
                 resource_aggregates=_aggregate_resource_samples(resource_samples),
                 quality_diagnostics=tuple(quality_diagnostics),
+                repeat_outcomes=tuple(repeat_outcomes),
             )
         )
     outcome = "success" if all(item.outcome == "success" for item in aggregates) else "fail"
@@ -240,6 +253,73 @@ def _git_clean() -> bool:
     except Exception:
         return False
     return completed.returncode == 0 and not completed.stdout.strip()
+
+
+def _publication_validity(*, outcome: str, aggregates: list[CandidateAggregate], run_profile: object | None, selected: list[object], offline_evidence: dict[str, object], git_clean: bool) -> dict[str, object]:
+    expected_candidates = tuple(getattr(run_profile, "ordered_candidate_ids", ())) if run_profile is not None else tuple(package.candidate_id for package in selected)
+    actual_candidates = tuple(candidate.candidate_id for candidate in aggregates)
+    exact_matrix = bool(expected_candidates) and actual_candidates == expected_candidates
+    blockers: list[str] = []
+    if outcome != "success":
+        blockers.append("run_not_successful")
+    if not exact_matrix:
+        blockers.append("incomplete_candidate_matrix")
+    if not git_clean:
+        blockers.append("git_worktree_not_clean")
+    if offline_evidence.get("status") != "PASS":
+        blockers.append("offline_evidence_not_verified")
+    if not _quality_matrix_complete(aggregates):
+        blockers.append("quality_matrix_incomplete")
+    return {
+        "schema_version": 2,
+        "publication_allowed": not blockers,
+        "blockers": sorted(set(blockers)),
+        "exact_candidate_matrix": exact_matrix,
+        "git_clean": git_clean,
+        "offline_evidence_status": str(offline_evidence.get("status") or "unknown"),
+    }
+
+
+def _quality_matrix_complete(aggregates: list[CandidateAggregate]) -> bool:
+    if not aggregates:
+        return False
+    required = {
+        "category:ru_coding_terms:wer",
+        "category:ru_coding_terms:cer",
+        "category:ru_coding_terms:coding_term_accuracy",
+        "category:ru_coding_terms:english_term_accuracy",
+        "category:ru_coding_terms:latin_preservation_rate",
+    }
+    return all(required.issubset(set(aggregate.quality_aggregates)) for aggregate in aggregates)
+
+
+def _repeat_outcome_json(repeat: object) -> dict[str, object]:
+    return {
+        "repeat_index": int(getattr(repeat, "repeat_index")),
+        "outcome": str(getattr(repeat, "outcome")),
+        "phase_outcomes": [_phase_json(phase) for phase in getattr(repeat, "phases", ())],
+        "sample_outcomes": [_sample_outcome_json(sample) for sample in getattr(repeat, "samples", ())],
+    }
+
+
+def _sample_outcome_json(sample: object) -> dict[str, object]:
+    return {
+        "sample_id": str(getattr(sample, "sample_id")),
+        "category": str(getattr(sample, "category")),
+        "scored": bool(getattr(sample, "scored")),
+        "outcome": str(getattr(sample, "outcome")),
+        "phase_outcomes": [_phase_json(phase) for phase in getattr(sample, "phases", ())],
+        "metrics": [metric.to_json() for metric in getattr(sample, "metrics", ())],
+        "metric_diagnostics": [diagnostic.to_json() for diagnostic in getattr(sample, "metric_diagnostics", ())],
+    }
+
+
+def _phase_json(phase: object) -> dict[str, object]:
+    return {
+        "phase": str(getattr(phase, "phase")),
+        "outcome": str(getattr(phase, "outcome")),
+        "duration_ms": round(float(getattr(phase, "duration_ms", 0.0) or 0.0), 3),
+    }
 
 
 def _execution_fingerprint(run_profile: object | None, packages: list[object], git_revision: str) -> object:

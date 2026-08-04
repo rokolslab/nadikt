@@ -166,7 +166,10 @@ class BenchmarkRunnerTest(unittest.TestCase):
             text = output.read_text(encoding="utf-8")
 
         self.assertEqual("dry_run", result.outcome)
+        self.assertEqual(2, result.to_json()["schema_version"])
+        self.assertFalse(result.to_json()["validity"]["publication_allowed"])
         self.assertIn('"run_kind": "coding_pilot"', text)
+        self.assertIn('"publication_allowed": false', text)
         self.assertNotIn("audio_path", text)
         self.assertNotIn("reference_text", text)
         self.assertNotIn("hypothesis", text)
@@ -439,6 +442,7 @@ def _benchmark_result_v2_payload() -> dict[str, object]:
                 "repeats_requested": 3,
                 "repeats_completed": 3,
                 "outcome": "success",
+                "phase_outcomes": {"load": "success"},
                 "quality_aggregates": {},
                 "quality_diagnostics": [],
                 "resource_aggregates": {},
