@@ -19,12 +19,14 @@ class WorkerSupervisorTest(unittest.TestCase):
         request = _request()
         process = _FakeProcess(WorkerResult(request.nonce, request.package_id, request.candidate_id, request.backend, "success").to_worker_json())
         sampler = _FakeSampler()
+        calls: list[object] = []
 
         result = WorkerSupervisor(
             timeout_seconds=1.0,
             sample_interval_seconds=100.0,
+            python_executable="/controlled/venv/bin/python",
             sampler_factory=lambda: sampler,
-            popen_factory=lambda *_args, **_kwargs: process,
+            popen_factory=lambda *args, **_kwargs: calls.append(args[0]) or process,
         ).run(request)
 
         self.assertEqual("success", result.worker_result.worker_status)
@@ -34,6 +36,7 @@ class WorkerSupervisorTest(unittest.TestCase):
         self.assertEqual(["terminate:False", "kill:False"], process.events)
         self.assertEqual(request.to_worker_json(), process.input_seen)
         self.assertEqual("spawn", result.timeline[0].event)
+        self.assertEqual("/controlled/venv/bin/python", calls[0][0])
 
     def test_timeout_terminates_then_kills_and_preserves_partial_report(self) -> None:
         request = _request()

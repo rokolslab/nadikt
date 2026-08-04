@@ -337,6 +337,36 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertNotIn("reference_text", rendered)
         self.assertNotIn("hypothesis", rendered)
 
+    def test_runner_passes_private_launcher_python_without_persisting_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            inventory = _write_inventory(root)
+            dataset = _write_dataset(root)
+            bindings = _write_bindings(root, dataset)
+            output = root / "result.json"
+            supervisor = _FakeWorkerSupervisor()
+            init_kwargs: list[dict[str, object]] = []
+
+            def supervisor_factory(**kwargs: object) -> _FakeWorkerSupervisor:
+                init_kwargs.append(kwargs)
+                return supervisor
+
+            with patch("benchmarks.asr.benchmark_runner.WorkerSupervisor", side_effect=supervisor_factory):
+                run_benchmark(
+                    inventory_path=inventory,
+                    dataset_profile_path=dataset,
+                    output_path=output,
+                    private_bindings_path=bindings,
+                    controlled_root=root,
+                    repeats=1,
+                    launcher_pythons={"candidate-0": "/private/venv/bin/python"},
+                )
+
+            persisted = output.read_text(encoding="utf-8")
+
+        self.assertEqual("/private/venv/bin/python", init_kwargs[0]["python_executable"])
+        self.assertNotIn("/private/venv", persisted)
+
 
 def _write_inventory(root: Path) -> Path:
     package_dir = root / "local-packages" / "package-0"

@@ -38,6 +38,7 @@ def run_benchmark(
     run_kind: str = "coding_pilot",
     run_profile_path: Path | None = None,
     dry_run: bool = False,
+    launcher_pythons: dict[str, str] | None = None,
 ) -> BenchmarkResult:
     LOGGER.info("benchmark_runner_start", extra={"run_kind": run_kind, "candidate": candidate or "all", "repeats": repeats, "dry_run": dry_run})
     packages, model_errors = load_model_inventory(inventory_path)
@@ -77,7 +78,7 @@ def run_benchmark(
             for package in selected
         ]
     else:
-        outcome, aggregates = _run_candidates(selected, binding_result, repeats, inventory_path.parent, samples, run_profile)
+        outcome, aggregates = _run_candidates(selected, binding_result, repeats, inventory_path.parent, samples, run_profile, launcher_pythons or {})
 
     privacy_payload = {
         "model_error_count": len(model_errors),
@@ -130,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-profile", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--launcher-python", action="append", default=[], metavar="CANDIDATE=PYTHON", help="Private per-candidate Python executable for worker launch; not persisted to results.")
     args = parser.parse_args(argv)
     if args.repeats < 1:
         raise SystemExit("--repeats must be positive")
@@ -145,12 +147,13 @@ def main(argv: list[str] | None = None) -> int:
         run_kind=args.run_kind,
         run_profile_path=args.run_profile,
         dry_run=args.dry_run,
+        launcher_pythons=_parse_launcher_python_options(args.launcher_python),
     )
     print(json.dumps(result.to_json(), ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if result.outcome in {"dry_run", "success", "not_run"} else 2
 
 
-def _run_candidates(packages: list[object], binding_result: object | None, repeats: int, inventory_root: Path, sample_manifests: list[SampleManifest], run_profile: object | None = None) -> tuple[str, list[CandidateAggregate]]:
+def _run_candidates(packages: list[object], binding_result: object | None, repeats: int, inventory_root: Path, sample_manifests: list[SampleManifest], run_profile: object | None = None, launcher_pythons: dict[str, str] | None = None) -> tuple[str, list[CandidateAggregate]]:
     if binding_result is None or not getattr(binding_result, "resolved_samples", ()):
         return "not_run", [
             CandidateAggregate(package.candidate_id, package.package_id, package.backend, repeats, 0, "not_run", {"bindings": "not_provided"})
@@ -160,8 +163,9 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
     manifests_by_id = {sample.sample_id: sample for sample in sample_manifests}
     warmup_sample, scored_samples = _split_worker_samples(samples, manifests_by_id, run_profile)
     aggregates: list[CandidateAggregate] = []
-    supervisor = WorkerSupervisor()
+    launcher_pythons = launcher_pythons or {}
     for package in packages:
+        supervisor = WorkerSupervisor(python_executable=launcher_pythons.get(package.candidate_id))
         completed = 0
         phase_outcomes: dict[str, str] = {}
         quality_results: dict[str, list[dict[str, object]]] = {}
@@ -218,6 +222,16 @@ def _git_revision(*, full: bool = False) -> str:
     except Exception:
         return "unknown"
     return completed.stdout.strip() or "unknown"
+
+
+def _parse_launcher_python_options(values: list[str]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for value in values:
+        candidate_id, separator, executable = value.partition("=")
+        if not candidate_id or not separator or not executable:
+            raise ValueError("invalid_launcher_python_option")
+        result[candidate_id] = executable
+    return result
 
 
 def _git_clean() -> bool:

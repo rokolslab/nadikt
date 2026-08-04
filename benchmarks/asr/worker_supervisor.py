@@ -43,6 +43,7 @@ class WorkerSupervisor:
     sample_interval_seconds: float = 0.2
     terminate_grace_seconds: float = 5.0
     max_capture_bytes: int = 128 * 1024
+    python_executable: str | None = None
     sampler_factory: SamplerFactory = create_default_resource_sampler
     popen_factory: PopenFactory = subprocess.Popen
 
@@ -50,7 +51,7 @@ class WorkerSupervisor:
         timeline = _Timeline()
         try:
             process = self.popen_factory(
-                [sys.executable, "-m", "benchmarks.asr.benchmark_worker"],
+                [self.python_executable or sys.executable, "-m", "benchmarks.asr.benchmark_worker"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
