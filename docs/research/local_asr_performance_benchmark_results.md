@@ -22,6 +22,12 @@ leaking transcript, reference, hypothesis, coding-term snippets, backend output
 or private paths. Safe public notes may include only IDs, category, metric name,
 numerator, denominator, status and bounded blocker/reason codes.
 
+Private rerun status on 2026-08-04: schema v2 normalized scoring emission was
+validated in controlled storage, but no result was published. Publication gate
+remains `BLOCKED` with safe blockers: `run_not_successful`,
+`quality_matrix_incomplete`, `offline_evidence_not_verified` and
+`git_worktree_not_clean`. This status is not model-choice evidence.
+
 ## Environment
 
 | Поле | Значение |
