@@ -14,7 +14,26 @@ PROTOCOL_VERSION_V2 = 2
 MAX_MESSAGE_BYTES = 128 * 1024
 WORKER_STATUSES = {"success", "fail", "not_run", "protocol_error"}
 SUPERVISOR_OUTCOMES = {"completed", "timeout", "terminated", "killed", "protocol_error", "privacy_error", "spawn_error", "nonzero_exit"}
-PHASE_OUTCOMES = {"success", "fail", "not_run", "readiness_failed", "protocol_error", "unsupported_backend", "checksum_mismatch"}
+PHASE_OUTCOMES = {
+    "success",
+    "fail",
+    "not_run",
+    "readiness_failed",
+    "protocol_error",
+    "unsupported_backend",
+    "missing_package",
+    "invalid_package_path",
+    "checksum_mismatch",
+    "missing_critical_file",
+    "incompatible_backend",
+    "license_not_verified",
+    "engine_not_ready",
+    "segment_too_long",
+    "cancelled",
+    "transcribe_failed",
+    "warm_up_failed",
+    "resource_release_failed",
+}
 SAMPLE_OUTCOMES = {"success", "fail", "not_run", "skipped"}
 REPEAT_OUTCOMES = {"success", "fail", "not_run"}
 SAFE_RESULT_KEYS = {

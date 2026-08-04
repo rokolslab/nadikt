@@ -325,6 +325,20 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
         self.assertEqual(2, diagnostic.count)
         self.assertNotIn("reference_text", json.dumps(result.to_json(), ensure_ascii=False))
 
+    def test_worker_result_v2_accepts_safe_asr_failure_phase_codes(self) -> None:
+        result = WorkerResultV2(
+            nonce="nonce-v2",
+            package_id="package-a",
+            candidate_id="candidate-a",
+            backend="gigaam",
+            worker_status="fail",
+            repeat=WorkerRepeatOutcome(0, "fail", phases=(WorkerPhase("load", "missing_package", 1.0),)),
+        )
+
+        loaded = loads_result_v2(result.to_worker_json())
+
+        self.assertEqual("missing_package", loaded.repeat.phases[0].outcome)
+
     def test_local_probe_default_factory_does_not_import_runtime_adapters_in_parent(self) -> None:
         source = (ROOT / "benchmarks/asr/local_model_probe.py").read_text(encoding="utf-8")
 
