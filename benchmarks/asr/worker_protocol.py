@@ -34,8 +34,9 @@ SAFE_REPEAT_REQUEST_KEYS = {"repeat_index", "warmup_sample", "scored_samples"}
 SAFE_SAMPLE_REQUEST_KEYS = {"sample_id", "category", "audio_file", "reference_file", "duration_seconds", "scored", "expected_english_terms", "expected_coding_terms"}
 SAFE_RESULT_V2_KEYS = {"schema_version", "nonce", "package_id", "candidate_id", "backend", "worker_status", "repeat"}
 SAFE_REPEAT_OUTCOME_KEYS = {"repeat_index", "outcome", "phases", "samples"}
-SAFE_SAMPLE_OUTCOME_KEYS = {"sample_id", "category", "scored", "outcome", "phases", "metrics"}
+SAFE_SAMPLE_OUTCOME_KEYS = {"sample_id", "category", "scored", "outcome", "phases", "metrics", "metric_diagnostics"}
 SAFE_METRIC_KEYS = {"metric_name", "metric_version", "value", "numerator", "denominator", "status"}
+SAFE_METRIC_DIAGNOSTIC_KEYS = {"sample_id", "category", "metric_name", "view", "status", "numerator", "denominator", "reason_code", "count"}
 
 
 @dataclass(frozen=True, repr=False)
@@ -238,6 +239,32 @@ class WorkerMetricResult:
 
 
 @dataclass(frozen=True)
+class WorkerMetricDiagnostic:
+    sample_id: str
+    category: str
+    metric_name: str
+    view: str
+    status: str
+    numerator: int
+    denominator: int
+    reason_code: str
+    count: int
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "sample_id": self.sample_id,
+            "category": self.category,
+            "metric_name": self.metric_name,
+            "view": self.view,
+            "status": self.status,
+            "numerator": self.numerator,
+            "denominator": self.denominator,
+            "reason_code": self.reason_code,
+            "count": self.count,
+        }
+
+
+@dataclass(frozen=True)
 class WorkerSampleOutcome:
     sample_id: str
     category: str
@@ -245,6 +272,7 @@ class WorkerSampleOutcome:
     outcome: str
     phases: tuple[WorkerPhase, ...] = field(default_factory=tuple)
     metrics: tuple[WorkerMetricResult, ...] = field(default_factory=tuple)
+    metric_diagnostics: tuple[WorkerMetricDiagnostic, ...] = field(default_factory=tuple)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -254,6 +282,7 @@ class WorkerSampleOutcome:
             "outcome": self.outcome,
             "phases": [phase.to_json() for phase in self.phases],
             "metrics": [metric.to_json() for metric in self.metrics],
+            "metric_diagnostics": [diagnostic.to_json() for diagnostic in self.metric_diagnostics],
         }
 
 
@@ -499,6 +528,9 @@ def _parse_sample_outcome(value: object) -> WorkerSampleOutcome:
     metrics_raw = value["metrics"]
     if not isinstance(metrics_raw, list):
         raise ValueError("worker_metrics_not_list")
+    diagnostics_raw = value.get("metric_diagnostics", [])
+    if not isinstance(diagnostics_raw, list):
+        raise ValueError("worker_metric_diagnostics_not_list")
     return WorkerSampleOutcome(
         sample_id=str(value["sample_id"]),
         category=str(value["category"]),
@@ -506,6 +538,7 @@ def _parse_sample_outcome(value: object) -> WorkerSampleOutcome:
         outcome=outcome,
         phases=_parse_phases(value["phases"]),
         metrics=tuple(_parse_metric(metric) for metric in metrics_raw),
+        metric_diagnostics=tuple(_parse_metric_diagnostic(diagnostic) for diagnostic in diagnostics_raw),
     )
 
 
@@ -523,6 +556,26 @@ def _parse_metric(value: object) -> WorkerMetricResult:
         numerator=_int_required(value["numerator"], "worker_metric_invalid_numerator"),
         denominator=_int_required(value["denominator"], "worker_metric_invalid_denominator"),
         status=str(value["status"]),
+    )
+
+
+def _parse_metric_diagnostic(value: object) -> WorkerMetricDiagnostic:
+    if not isinstance(value, Mapping):
+        raise ValueError("worker_metric_diagnostic_not_object")
+    unknown = set(value).difference(SAFE_METRIC_DIAGNOSTIC_KEYS)
+    if unknown:
+        raise ValueError("worker_metric_diagnostic_unknown_fields")
+    _require_keys(value, SAFE_METRIC_DIAGNOSTIC_KEYS, "worker_metric_diagnostic_missing_fields")
+    return WorkerMetricDiagnostic(
+        sample_id=str(value["sample_id"]),
+        category=str(value["category"]),
+        metric_name=str(value["metric_name"]),
+        view=str(value["view"]),
+        status=str(value["status"]),
+        numerator=_int_required(value["numerator"], "worker_metric_diagnostic_invalid_numerator"),
+        denominator=_int_required(value["denominator"], "worker_metric_diagnostic_invalid_denominator"),
+        reason_code=str(value["reason_code"]),
+        count=_int_required(value["count"], "worker_metric_diagnostic_invalid_count"),
     )
 
 

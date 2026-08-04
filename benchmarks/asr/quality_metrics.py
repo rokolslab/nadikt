@@ -30,6 +30,28 @@ class QualityMetricResult:
             "version": self.version,
         }
 
+
+@dataclass(frozen=True)
+class MetricDiagnostic:
+    metric_name: str
+    status: str
+    numerator: int
+    denominator: int
+    reason_code: str
+    count: int
+    view: str = "raw"
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "metric_name": self.metric_name,
+            "view": self.view,
+            "status": self.status,
+            "numerator": self.numerator,
+            "denominator": self.denominator,
+            "reason_code": self.reason_code,
+            "count": self.count,
+        }
+
     def safe_log_context(self, sample_id: str) -> dict[str, object]:
         return {
             "sample_id": sample_id,
@@ -43,8 +65,15 @@ class QualityMetricResult:
 
 
 def normalize_tokens(text: str) -> list[str]:
-    normalized = unicodedata.normalize("NFKC", text).casefold()
-    return [match.group(0) for match in TOKEN_RE.finditer(normalized)]
+    normalized = unicodedata.normalize("NFKC", text).casefold().replace("/", " ")
+    tokens: list[str] = []
+    for match in TOKEN_RE.finditer(normalized):
+        token = match.group(0)
+        if len(token) > 1:
+            token = token.rstrip(".")
+        if token:
+            tokens.append(token)
+    return tokens
 
 
 def wer(reference: str, hypothesis: str) -> QualityMetricResult:
@@ -72,6 +101,11 @@ def english_term_accuracy(expected_terms: list[str], hypothesis: str) -> Quality
         {"canonical": term, "accepted_variants": [term], "expected_occurrences": 1, "require_latin": False}
         for term in expected_terms
     ]
+    return english_term_accuracy_from_records(records, hypothesis)
+
+
+def english_term_accuracy_from_records(term_records: list[Mapping[str, object]], hypothesis: str) -> QualityMetricResult:
+    records = [_with_latin_requirement(record, require_latin=False) for record in term_records]
     return coding_term_accuracy(records, hypothesis, metric_name="english_term_accuracy")
 
 
@@ -83,6 +117,11 @@ def latin_preservation_rate(expected_terms: list[str], hypothesis: str) -> Quali
         {"canonical": term, "accepted_variants": [term], "expected_occurrences": 1, "require_latin": True}
         for term in latin_terms
     ]
+    return latin_preservation_rate_from_records(records, hypothesis)
+
+
+def latin_preservation_rate_from_records(term_records: list[Mapping[str, object]], hypothesis: str) -> QualityMetricResult:
+    records = [_with_latin_requirement(record, require_latin=True) for record in term_records if bool(record.get("require_latin", False))]
     return coding_term_accuracy(records, hypothesis, metric_name="latin_preservation_rate")
 
 
@@ -100,14 +139,7 @@ def coding_term_accuracy(term_records: list[Mapping[str, object]], hypothesis: s
         variants = record.get("accepted_variants", [])
         if not isinstance(variants, list):
             variants = []
-        matched += min(
-            expected,
-            sum(
-                _count_variant(normalized_hypothesis, str(variant))
-                for variant in variants
-                if isinstance(variant, str) and (not require_latin or _has_latin(variant))
-            ),
-        )
+        matched += min(expected, _count_record_matches(normalized_hypothesis, variants, require_latin=require_latin))
     return QualityMetricResult(metric_name=metric_name, value=matched / denominator, numerator=matched, denominator=denominator)
 
 
@@ -120,10 +152,37 @@ def aggregate_corpus(metric_name: str, results: list[QualityMetricResult]) -> Qu
     return QualityMetricResult(metric_name=metric_name, value=numerator / denominator, numerator=numerator, denominator=denominator)
 
 
+def metric_diagnostics(result: QualityMetricResult, *, view: str = "raw") -> tuple[MetricDiagnostic, ...]:
+    if result.status == "not_applicable" or result.denominator == 0:
+        return (_diagnostic(result, "not_applicable", max(1, result.denominator), view=view),)
+    if result.numerator >= result.denominator:
+        return (_diagnostic(result, "exact_latin_match", result.denominator, view=view),)
+    if result.metric_name == "latin_preservation_rate" and result.numerator == 0:
+        return (_diagnostic(result, "latin_missing", result.denominator, view=view),)
+    if result.numerator == 0:
+        return (_diagnostic(result, "variant_missing", result.denominator, view=view),)
+    return (
+        _diagnostic(result, "accepted_variant_match", result.numerator, view=view),
+        _diagnostic(result, "occurrence_shortfall", result.denominator - result.numerator, view=view),
+    )
+
+
 def _rate(numerator: int, denominator: int, *, empty_value: float = 0.0) -> float:
     if denominator == 0:
         return empty_value
     return numerator / denominator
+
+
+def _diagnostic(result: QualityMetricResult, reason_code: str, count: int, *, view: str) -> MetricDiagnostic:
+    return MetricDiagnostic(
+        metric_name=result.metric_name,
+        view=view,
+        status=result.status,
+        numerator=result.numerator,
+        denominator=result.denominator,
+        reason_code=reason_code,
+        count=max(0, count),
+    )
 
 
 def _status(denominator: int) -> str:
@@ -137,16 +196,42 @@ def _expected_occurrences(record: Mapping[str, object]) -> int:
     return value
 
 
+def _with_latin_requirement(record: Mapping[str, object], *, require_latin: bool) -> dict[str, object]:
+    updated = dict(record)
+    updated["require_latin"] = require_latin
+    return updated
+
+
 def _normalized_phrase(text: str) -> str:
     return " ".join(normalize_tokens(text))
 
 
 def _count_variant(normalized_hypothesis: str, variant: str) -> int:
+    return len(_variant_spans(normalized_hypothesis, variant))
+
+
+def _count_record_matches(normalized_hypothesis: str, variants: list[object], *, require_latin: bool) -> int:
+    spans: list[tuple[int, int]] = []
+    for variant in variants:
+        if isinstance(variant, str) and (not require_latin or _has_latin(variant)):
+            spans.extend(_variant_spans(normalized_hypothesis, variant))
+    selected: list[tuple[int, int]] = []
+    for span in sorted(set(spans), key=lambda item: (item[0], -(item[1] - item[0]))):
+        if not any(_spans_overlap(span, existing) for existing in selected):
+            selected.append(span)
+    return len(selected)
+
+
+def _variant_spans(normalized_hypothesis: str, variant: str) -> list[tuple[int, int]]:
     normalized_variant = _normalized_phrase(variant)
     if not normalized_variant:
-        return 0
+        return []
     pattern = rf"(?<![0-9a-zа-яё_./+\-]){re.escape(normalized_variant)}(?![0-9a-zа-яё_./+\-])"
-    return len(re.findall(pattern, normalized_hypothesis))
+    return [(match.start(), match.end()) for match in re.finditer(pattern, normalized_hypothesis)]
+
+
+def _spans_overlap(left: tuple[int, int], right: tuple[int, int]) -> bool:
+    return left[0] < right[1] and right[0] < left[1]
 
 
 def _has_latin(text: str) -> bool:

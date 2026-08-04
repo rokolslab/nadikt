@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from benchmarks.asr.worker_protocol import (
     WorkerMetricResult,
+    WorkerMetricDiagnostic,
     WorkerPhase,
     WorkerRepeatOutcome,
     WorkerRepeatRequest,
@@ -266,6 +267,63 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
         self.assertEqual([], list(result.repeat.samples[0].metrics))
         self.assertEqual(["wer", "cer", "english_term_accuracy", "latin_preservation_rate", "coding_term_accuracy"], [metric.metric_name for metric in result.repeat.samples[1].metrics])
         self.assertEqual(["load", "is_ready", "warmup:warmup_001", "transcribe:scored_001", "close"], engine.events)
+
+    def test_worker_metrics_prefer_rich_coding_terms_for_english_and_latin_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            audio = root / "scored.wav"
+            reference = root / "reference.txt"
+            audio.write_bytes(b"synthetic")
+            reference.write_text("synthetic reference", encoding="utf-8")
+            sample = WorkerSampleRequest(
+                sample_id="scored_001",
+                category="ru_coding_terms",
+                audio_file=audio,
+                reference_file=reference,
+                duration_seconds=1.0,
+                scored=True,
+                expected_english_terms=("legacy-only",),
+                expected_coding_terms=(
+                    {"canonical": "FastAPI route", "accepted_variants": ["FastAPI route", "Fast API route"], "expected_occurrences": 2, "require_latin": True},
+                    {"canonical": "локальный термин", "accepted_variants": ["локальный термин"], "expected_occurrences": 1, "require_latin": False},
+                ),
+            )
+
+            metrics = {metric.metric_name: metric for metric in benchmark_worker._sample_metrics(sample, "Fast API route локальный термин")}
+
+        self.assertEqual(2, metrics["english_term_accuracy"].numerator)
+        self.assertEqual(3, metrics["english_term_accuracy"].denominator)
+        self.assertEqual(1, metrics["latin_preservation_rate"].numerator)
+        self.assertEqual(2, metrics["latin_preservation_rate"].denominator)
+
+    def test_worker_result_v2_round_trips_safe_metric_diagnostics(self) -> None:
+        result = WorkerResultV2(
+            nonce="nonce-v2",
+            package_id="package-a",
+            candidate_id="candidate-a",
+            backend="faster-whisper",
+            worker_status="success",
+            repeat=WorkerRepeatOutcome(
+                0,
+                "success",
+                samples=(
+                    WorkerSampleOutcome(
+                        sample_id="sample_001",
+                        category="ru_coding_terms",
+                        scored=True,
+                        outcome="success",
+                        metric_diagnostics=(WorkerMetricDiagnostic("sample_001", "ru_coding_terms", "latin_preservation_rate", "raw", "ok", 0, 2, "latin_missing", 2),),
+                    ),
+                ),
+            ),
+        )
+
+        loaded = loads_result_v2(result.to_worker_json())
+
+        diagnostic = loaded.repeat.samples[0].metric_diagnostics[0]
+        self.assertEqual("latin_missing", diagnostic.reason_code)
+        self.assertEqual(2, diagnostic.count)
+        self.assertNotIn("reference_text", json.dumps(result.to_json(), ensure_ascii=False))
 
     def test_local_probe_default_factory_does_not_import_runtime_adapters_in_parent(self) -> None:
         source = (ROOT / "benchmarks/asr/local_model_probe.py").read_text(encoding="utf-8")

@@ -22,7 +22,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "repeat_outcomes", "quality_aggregates", "resource_aggregates"],
+        "required": ["candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "repeat_outcomes", "quality_aggregates", "quality_diagnostics", "resource_aggregates"],
         "properties": {
           "candidate_id": {"type": "string", "minLength": 1},
           "package_id": {"type": "string", "minLength": 1},
@@ -32,6 +32,7 @@
           "outcome": {"type": "string", "enum": ["success", "fail", "not_run"]},
           "quality_aggregates": {"type": "object"},
           "resource_aggregates": {"type": "object"},
+          "quality_diagnostics": {"type": "array", "items": {"$ref": "#/$defs/metric_diagnostic"}},
           "repeat_outcomes": {"type": "array", "items": {"$ref": "#/$defs/repeat_outcome"}}
         }
       }
@@ -52,14 +53,15 @@
     "sample_outcome": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sample_id", "category", "scored", "outcome", "phase_outcomes", "metrics"],
+      "required": ["sample_id", "category", "scored", "outcome", "phase_outcomes", "metrics", "metric_diagnostics"],
       "properties": {
         "sample_id": {"type": "string", "minLength": 1},
         "category": {"type": "string", "minLength": 1},
         "scored": {"type": "boolean"},
         "outcome": {"type": "string", "enum": ["success", "fail", "not_run", "skipped"]},
         "phase_outcomes": {"type": "array", "items": {"$ref": "#/$defs/phase_outcome"}},
-        "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}}
+        "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
+        "metric_diagnostics": {"type": "array", "items": {"$ref": "#/$defs/metric_diagnostic"}}
       }
     },
     "metric": {
@@ -83,6 +85,22 @@
         "phase": {"type": "string", "minLength": 1},
         "outcome": {"type": "string", "minLength": 1},
         "duration_ms": {"type": "number", "minimum": 0}
+      }
+    },
+    "metric_diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample_id", "category", "metric_name", "view", "status", "numerator", "denominator", "reason_code", "count"],
+      "properties": {
+        "sample_id": {"type": "string", "minLength": 1},
+        "category": {"type": "string", "minLength": 1},
+        "metric_name": {"type": "string", "minLength": 1},
+        "view": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "minLength": 1},
+        "numerator": {"type": "integer", "minimum": 0},
+        "denominator": {"type": "integer", "minimum": 0},
+        "reason_code": {"type": "string", "enum": ["not_applicable", "exact_latin_match", "accepted_variant_match", "latin_missing", "variant_missing", "occurrence_shortfall", "asr_omission", "metric_mismatch"]},
+        "count": {"type": "integer", "minimum": 0}
       }
     }
   }

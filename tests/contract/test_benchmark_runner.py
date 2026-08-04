@@ -298,14 +298,14 @@ class BenchmarkRunnerTest(unittest.TestCase):
 
     def test_candidate_aggregate_includes_safe_quality_and_resource_counters(self) -> None:
         aggregate = CandidateAggregate(
-            "candidate",
-            "package",
-            "faster-whisper",
-            1,
-            1,
-            "success",
-            {"transcribe_probe": "success"},
-            _aggregate_quality_results(
+            candidate_id="candidate",
+            package_id="package",
+            backend="faster-whisper",
+            repeats_requested=1,
+            repeats_completed=1,
+            outcome="success",
+            phase_outcomes={"transcribe_probe": "success"},
+            quality_aggregates=_aggregate_quality_results(
                 {
                     "wer": [
                         {"metric_name": "wer", "numerator": 1, "denominator": 4, "status": "ok"},
@@ -313,18 +313,23 @@ class BenchmarkRunnerTest(unittest.TestCase):
                     ]
                 }
             ),
-            _aggregate_resource_samples(
+            resource_aggregates=_aggregate_resource_samples(
                 [
                     {"audio_seconds": 2.0, "transcribe_probe_duration_ms": 500.0, "transcribe_probe_rtf": 0.25, "resource_backend": "fake", "resource_backend_version": "v1", "resource_cpu_normalization": "one_logical_cpu_100_percent", "resource_status": "ok", "resource_sample_interval_ms": 100, "resource_sample_count": 2, "resource_missed_sample_count": 0, "resource_cpu_avg_percent": 10.0, "resource_cpu_max_percent": 20.0, "resource_peak_rss_mib": 100.0},
                     {"audio_seconds": 4.0, "transcribe_probe_duration_ms": 2000.0, "transcribe_probe_rtf": 0.5, "resource_backend": "fake", "resource_backend_version": "v1", "resource_cpu_normalization": "one_logical_cpu_100_percent", "resource_status": "ok", "resource_sample_interval_ms": 100, "resource_sample_count": 2, "resource_missed_sample_count": 0, "resource_cpu_avg_percent": 30.0, "resource_cpu_max_percent": 40.0, "resource_peak_rss_mib": 120.0},
                 ]
+            ),
+            quality_diagnostics=(
+                {"sample_id": "sample_001", "category": "ru_coding_terms", "metric_name": "latin_preservation_rate", "view": "raw", "status": "ok", "numerator": 0, "denominator": 2, "reason_code": "latin_missing", "count": 2},
             ),
         )
 
         rendered = json.dumps(aggregate.to_json(), ensure_ascii=False, sort_keys=True)
 
         self.assertIn('"quality_aggregates"', rendered)
+        self.assertIn('"quality_diagnostics"', rendered)
         self.assertIn('"resource_aggregates"', rendered)
+        self.assertIn('"reason_code": "latin_missing"', rendered)
         self.assertIn('"numerator": 3', rendered)
         self.assertIn('"transcribe_probe_rtf_avg": 0.375', rendered)
         self.assertIn('"resource_peak_rss_mib": 120.0', rendered)
@@ -405,6 +410,7 @@ def _benchmark_result_v2_payload() -> dict[str, object]:
                 "repeats_completed": 3,
                 "outcome": "success",
                 "quality_aggregates": {},
+                "quality_diagnostics": [],
                 "resource_aggregates": {},
                 "repeat_outcomes": [
                     {
@@ -428,6 +434,7 @@ def _benchmark_result_v2_payload() -> dict[str, object]:
                                         "status": "ok",
                                     }
                                 ],
+                                "metric_diagnostics": [],
                             }
                         ],
                     }

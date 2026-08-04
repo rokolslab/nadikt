@@ -19,7 +19,7 @@ from .manifests import SampleManifest, load_json, load_model_inventory, load_run
 from .offline_evidence import unverified_evidence
 from .privacy_audit import audit_text_artifact
 from .resource_measurement import ResourceReport, phase_resource_report
-from .worker_protocol import WorkerMetricResult, WorkerRepeatRequest, WorkerRequestV2, WorkerSampleOutcome, WorkerSampleRequest, new_nonce
+from .worker_protocol import WorkerMetricDiagnostic, WorkerMetricResult, WorkerRepeatRequest, WorkerRequestV2, WorkerSampleOutcome, WorkerSampleRequest, new_nonce
 from .worker_supervisor import WorkerSupervisor
 
 LOGGER = get_logger(__name__)
@@ -111,7 +111,7 @@ def run_benchmark(
     )
     rendered = json.dumps(result.to_json(), ensure_ascii=False, sort_keys=True)
     audit = audit_text_artifact(rendered, canary="NADIKT_CONTROLLED_CANARY")
-    if audit.canary_present or audit.forbidden_payload_count:
+    if audit.has_violation:
         raise ValueError("benchmark_result_privacy_violation")
     write_result_atomic(result, output_path)
     LOGGER.info("benchmark_runner_done", extra={"run_id": run_id, "outcome": outcome, "candidate_count": len(aggregates)})
@@ -165,6 +165,7 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
         completed = 0
         phase_outcomes: dict[str, str] = {}
         quality_results: dict[str, list[dict[str, object]]] = {}
+        quality_diagnostics: list[dict[str, object]] = []
         resource_samples: list[dict[str, object]] = []
         package_dir = (inventory_root / package.package_path).resolve(strict=False)
         for repeat_index in range(repeats):
@@ -188,20 +189,22 @@ def _run_candidates(packages: list[object], binding_result: object | None, repea
             for sample in result.repeat.samples:
                 if sample.scored:
                     _collect_sample_metrics(quality_results, sample.metrics, sample.category)
+                    _collect_sample_diagnostics(quality_diagnostics, sample.metric_diagnostics)
             resource_samples.append(_resource_sample_v2(result.repeat.samples, scored_samples, result.repeat.phases, supervised.resource_report))
             if supervised.supervisor_outcome == "completed" and result.worker_status == "success" and result.repeat.outcome == "success":
                 completed += 1
         aggregates.append(
             CandidateAggregate(
-                package.candidate_id,
-                package.package_id,
-                package.backend,
-                repeats,
-                completed,
-                "success" if completed == repeats else "fail",
-                phase_outcomes,
-                _aggregate_quality_results(quality_results),
-                _aggregate_resource_samples(resource_samples),
+                candidate_id=package.candidate_id,
+                package_id=package.package_id,
+                backend=package.backend,
+                repeats_requested=repeats,
+                repeats_completed=completed,
+                outcome="success" if completed == repeats else "fail",
+                phase_outcomes=phase_outcomes,
+                quality_aggregates=_aggregate_quality_results(quality_results),
+                resource_aggregates=_aggregate_resource_samples(resource_samples),
+                quality_diagnostics=tuple(quality_diagnostics),
             )
         )
     outcome = "success" if all(item.outcome == "success" for item in aggregates) else "fail"
@@ -248,6 +251,10 @@ def _collect_sample_metrics(target: dict[str, list[dict[str, object]]], metrics:
         metric_json = metric.to_json()
         target.setdefault(metric.metric_name, []).append(metric_json)
         target.setdefault(f"category:{category}:{metric.metric_name}", []).append(metric_json)
+
+
+def _collect_sample_diagnostics(target: list[dict[str, object]], diagnostics: tuple[WorkerMetricDiagnostic, ...]) -> None:
+    target.extend(diagnostic.to_json() for diagnostic in diagnostics)
 
 
 def _aggregate_quality_results(metrics: dict[str, list[dict[str, object]]]) -> dict[str, dict[str, object]]:

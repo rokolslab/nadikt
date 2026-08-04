@@ -193,6 +193,36 @@ If external default-deny network observation is not active, the publishable
 artifact must keep `offline_evidence.status=NOT VERIFIED` even when load and
 transcription phases succeed.
 
+## ASR Coding Terms Triage
+
+Zero values for `coding_term_accuracy`, `english_term_accuracy` or
+`latin_preservation_rate` are not interpreted as model quality evidence until a
+controlled triage separates zero-denominator/not-applicable cases from true
+zero-match cases.
+
+Controlled inspection rules:
+
+1. Inspect private reference and hypothesis files only under controlled storage
+   outside Git, for example `/home/oitroot/nadikt-controlled`.
+2. Do not copy transcripts, references, hypotheses, backend stdout/stderr,
+   audio labels or private paths into the repository.
+3. Before interpreting any `0.0` metric, check the aggregate fields emitted by
+   `benchmarks/asr/benchmark_runner.py`: `status`, `numerator`, `denominator`,
+   `sample_measurements`, `applicable_measurements`,
+   `not_applicable_measurements` and `completeness_status`.
+4. Treat `status=not_applicable`, `denominator=0` or
+   `completeness_status=incomplete` as a scoring/data completeness blocker, not
+   as ASR quality evidence.
+5. Repo-facing triage output may contain only `run_id`, `candidate_id`,
+   `sample_id`, `category`, `metric_name`, `numerator`, `denominator`, `status`
+   and bounded `reason_code` values.
+6. Even at `DEBUG` level, logs and notes must not include transcript,
+   reference, hypothesis or coding-term snippets.
+
+Allowed initial reason codes are `not_applicable`, `exact_latin_match`,
+`accepted_variant_match`, `latin_missing`, `variant_missing`,
+`occurrence_shortfall`, `asr_omission` and `metric_mismatch`.
+
 ## Real ASR Lifecycle Opt-In
 
 Real model loading is disabled by default. Without both opt-in variables the

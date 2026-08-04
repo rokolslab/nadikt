@@ -36,11 +36,12 @@ ALLOWED_TOP_LEVEL_KEYS_V2 = {
     "validity",
     "outcome",
 }
-ALLOWED_CANDIDATE_KEYS_V2 = {"candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "repeat_outcomes", "quality_aggregates", "resource_aggregates"}
+ALLOWED_CANDIDATE_KEYS_V2 = {"candidate_id", "package_id", "backend", "repeats_requested", "repeats_completed", "outcome", "repeat_outcomes", "quality_aggregates", "quality_diagnostics", "resource_aggregates"}
 ALLOWED_REPEAT_KEYS_V2 = {"repeat_index", "outcome", "phase_outcomes", "sample_outcomes"}
-ALLOWED_SAMPLE_KEYS_V2 = {"sample_id", "category", "scored", "outcome", "phase_outcomes", "metrics"}
+ALLOWED_SAMPLE_KEYS_V2 = {"sample_id", "category", "scored", "outcome", "phase_outcomes", "metrics", "metric_diagnostics"}
 ALLOWED_PHASE_KEYS_V2 = {"phase", "outcome", "duration_ms"}
 ALLOWED_METRIC_KEYS_V2 = {"metric_name", "metric_version", "value", "numerator", "denominator", "status"}
+ALLOWED_METRIC_DIAGNOSTIC_KEYS_V2 = {"sample_id", "category", "metric_name", "view", "status", "numerator", "denominator", "reason_code", "count"}
 RESULT_VERSIONS = {1, 2}
 
 
@@ -55,6 +56,7 @@ class CandidateAggregate:
     phase_outcomes: Mapping[str, str] = field(default_factory=dict)
     quality_aggregates: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
     resource_aggregates: Mapping[str, object] = field(default_factory=dict)
+    quality_diagnostics: tuple[Mapping[str, object], ...] = field(default_factory=tuple)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -66,6 +68,7 @@ class CandidateAggregate:
             "outcome": self.outcome,
             "phase_outcomes": dict(sorted(self.phase_outcomes.items())),
             "quality_aggregates": {name: dict(value) for name, value in sorted(self.quality_aggregates.items())},
+            "quality_diagnostics": [dict(value) for value in self.quality_diagnostics],
             "resource_aggregates": dict(sorted(self.resource_aggregates.items())),
         }
 
@@ -154,6 +157,11 @@ def _validate_candidate_v2(value: object) -> None:
         raise ValueError("benchmark_result_repeats_not_list")
     for repeat in repeats:
         _validate_repeat_v2(repeat)
+    diagnostics = value["quality_diagnostics"]
+    if not isinstance(diagnostics, list):
+        raise ValueError("benchmark_result_quality_diagnostics_not_list")
+    for diagnostic in diagnostics:
+        _validate_metric_diagnostic_v2(diagnostic)
 
 
 def _validate_repeat_v2(value: object) -> None:
@@ -189,6 +197,20 @@ def _validate_sample_v2(value: object) -> None:
             raise ValueError("benchmark_result_metric_unknown_fields")
         if ALLOWED_METRIC_KEYS_V2.difference(metric):
             raise ValueError("benchmark_result_metric_missing_fields")
+    diagnostics = value["metric_diagnostics"]
+    if not isinstance(diagnostics, list):
+        raise ValueError("benchmark_result_metric_diagnostics_not_list")
+    for diagnostic in diagnostics:
+        _validate_metric_diagnostic_v2(diagnostic)
+
+
+def _validate_metric_diagnostic_v2(value: object) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError("benchmark_result_metric_diagnostic_not_object")
+    if set(value).difference(ALLOWED_METRIC_DIAGNOSTIC_KEYS_V2):
+        raise ValueError("benchmark_result_metric_diagnostic_unknown_fields")
+    if ALLOWED_METRIC_DIAGNOSTIC_KEYS_V2.difference(value):
+        raise ValueError("benchmark_result_metric_diagnostic_missing_fields")
 
 
 def _validate_phase_outcomes_v2(value: object) -> None:

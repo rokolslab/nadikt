@@ -11,7 +11,17 @@ if str(SRC) not in sys.path:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from benchmarks.asr.quality_metrics import aggregate_corpus, cer, coding_term_accuracy, wer
+from benchmarks.asr.quality_metrics import (
+    aggregate_corpus,
+    cer,
+    coding_term_accuracy,
+    english_term_accuracy,
+    english_term_accuracy_from_records,
+    latin_preservation_rate,
+    latin_preservation_rate_from_records,
+    metric_diagnostics,
+    wer,
+)
 
 
 class QualityMetricsTest(unittest.TestCase):
@@ -59,6 +69,78 @@ class QualityMetricsTest(unittest.TestCase):
 
         self.assertEqual(2, result.numerator)
         self.assertEqual(2, result.denominator)
+
+    def test_coding_terms_cover_common_coding_phrases_with_punctuation_adjacency(self) -> None:
+        records = [
+            {"canonical": "FastAPI route", "accepted_variants": ["FastAPI route", "Fast API route"], "expected_occurrences": 1, "require_latin": True},
+            {"canonical": "React component", "accepted_variants": ["React component"], "expected_occurrences": 1, "require_latin": True},
+            {"canonical": "pull request", "accepted_variants": ["pull request"], "expected_occurrences": 1, "require_latin": True},
+            {"canonical": "C++", "accepted_variants": ["C++"], "expected_occurrences": 1, "require_latin": True},
+            {"canonical": ".NET", "accepted_variants": [".NET", "dotnet"], "expected_occurrences": 1, "require_latin": True},
+        ]
+
+        result = coding_term_accuracy(records, "Fast API route, React component; pull request. C++/.NET")
+
+        self.assertEqual(5, result.numerator)
+        self.assertEqual(5, result.denominator)
+
+    def test_coding_terms_do_not_overcount_colliding_accepted_variants(self) -> None:
+        records = [
+            {"canonical": "FastAPI route", "accepted_variants": ["FastAPI route", "fastapi route"], "expected_occurrences": 2, "require_latin": True},
+        ]
+
+        result = coding_term_accuracy(records, "FastAPI route")
+
+        self.assertEqual(1, result.numerator)
+        self.assertEqual(2, result.denominator)
+
+    def test_english_and_latin_metrics_keep_legacy_plain_terms(self) -> None:
+        english = english_term_accuracy(["docker compose", "pull request"], "docker compose")
+        latin = latin_preservation_rate(["docker compose", "апи"], "docker compose апи")
+
+        self.assertEqual("english_term_accuracy", english.metric_name)
+        self.assertEqual(1, english.numerator)
+        self.assertEqual(2, english.denominator)
+        self.assertEqual("latin_preservation_rate", latin.metric_name)
+        self.assertEqual(1, latin.numerator)
+        self.assertEqual(1, latin.denominator)
+
+    def test_english_and_latin_metrics_use_rich_records_when_available(self) -> None:
+        records = [
+            {"canonical": "FastAPI route", "accepted_variants": ["FastAPI route", "Fast API route"], "expected_occurrences": 2, "require_latin": True},
+            {"canonical": "локальный термин", "accepted_variants": ["локальный термин"], "expected_occurrences": 1, "require_latin": False},
+        ]
+
+        english = english_term_accuracy_from_records(records, "Fast API route локальный термин")
+        latin = latin_preservation_rate_from_records(records, "Fast API route локальный термин")
+
+        self.assertEqual(2, english.numerator)
+        self.assertEqual(3, english.denominator)
+        self.assertEqual(1, latin.numerator)
+        self.assertEqual(2, latin.denominator)
+
+    def test_latin_metric_rejects_cyrillic_false_positive_when_latin_required(self) -> None:
+        records = [
+            {"canonical": "React", "accepted_variants": ["React", "реакт"], "expected_occurrences": 1, "require_latin": True},
+        ]
+
+        result = coding_term_accuracy(records, "реакт")
+
+        self.assertEqual(0, result.numerator)
+        self.assertEqual(1, result.denominator)
+
+    def test_metric_diagnostics_are_bounded_reason_counts(self) -> None:
+        missing = latin_preservation_rate_from_records(
+            [{"canonical": "React", "accepted_variants": ["React"], "expected_occurrences": 2, "require_latin": True}],
+            "реакт",
+        )
+
+        diagnostics = metric_diagnostics(missing)
+
+        self.assertEqual(1, len(diagnostics))
+        self.assertEqual("latin_missing", diagnostics[0].reason_code)
+        self.assertEqual(2, diagnostics[0].count)
+        self.assertEqual("raw", diagnostics[0].view)
 
     def test_zero_denominator_is_not_applicable(self) -> None:
         result = coding_term_accuracy([], "любой текст")

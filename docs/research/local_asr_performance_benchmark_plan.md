@@ -180,6 +180,24 @@ English term accuracy считается по заранее заданному 
 
 Постобработка Nadikt, пользовательский словарь и нормализация должны измеряться отдельно от raw ASR comparison, чтобы не скрыть качество backend.
 
+Для coding-pilot triage нулевые значения `coding_term_accuracy`,
+`english_term_accuracy` и `latin_preservation_rate` сначала проходят
+denominator/status gate. Operator должен проверить `status`, `numerator`,
+`denominator`, `sample_measurements`, `applicable_measurements`,
+`not_applicable_measurements` и `completeness_status` в aggregate output до
+любой качественной интерпретации. `status=not_applicable`, `denominator=0` или
+`completeness_status=incomplete` означает blocker scoring/dataset completeness,
+а не доказанный ASR miss.
+
+Controlled zero-metrics inspection выполняется только в private scratch outside
+Git. Repo-facing status может содержать только IDs, category, metric names,
+numerator/denominator counts, status и bounded reason codes; transcript,
+reference, hypothesis, coding-term snippets, raw backend output и private paths
+запрещены в logs, stdout/stderr и markdown notes даже для DEBUG. Publication
+остаётся blocked, пока triage не докажет complete denominator semantics,
+schema-v2 aggregate, exact frozen two-candidate matrix, clean revision, privacy
+audit PASS и `offline_evidence.status=PASS`.
+
 ## Acceptance Gates
 
 Candidate допускается к следующему этапу только если:

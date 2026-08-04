@@ -25,8 +25,19 @@ from nadikt.domain.ports.asr import (
 )
 
 from .offline_supervisor import build_unverified_worker_evidence
-from .quality_metrics import cer, coding_term_accuracy, english_term_accuracy, latin_preservation_rate, wer
+from .quality_metrics import (
+    QualityMetricResult,
+    cer,
+    coding_term_accuracy,
+    english_term_accuracy,
+    english_term_accuracy_from_records,
+    latin_preservation_rate,
+    latin_preservation_rate_from_records,
+    metric_diagnostics,
+    wer,
+)
 from .worker_protocol import (
+    WorkerMetricDiagnostic,
     WorkerMetricResult,
     WorkerPhase,
     WorkerRepeatOutcome,
@@ -177,12 +188,15 @@ def _run_sample(engine: object, sample: WorkerSampleRequest, *, phase_name: str)
         if sample.scored:
             transcript = engine.transcribe_segment(segment)
             phases = (_phase(phase_name, "success", started, segment_id=0),)
-            metrics = _sample_metrics(sample, transcript.text)
+            metric_results = _quality_metric_results(sample, transcript.text)
+            metrics = _worker_metrics(metric_results)
+            diagnostics = _worker_metric_diagnostics(sample, metric_results)
         else:
             engine.warm_up(segment)
             phases = (_phase(phase_name, "success", started, segment_id=0),)
             metrics = ()
-        return WorkerSampleOutcome(sample.sample_id, sample.category, sample.scored, "success", phases, metrics)
+            diagnostics = ()
+        return WorkerSampleOutcome(sample.sample_id, sample.category, sample.scored, "success", phases, metrics, diagnostics)
     except AsrEngineError as error:
         return WorkerSampleOutcome(sample.sample_id, sample.category, sample.scored, "fail", (WorkerPhase(error.failure.phase, error.failure.code.value),), ())
 
@@ -191,28 +205,73 @@ def _quality_metrics(request: WorkerRequest, hypothesis: str) -> dict[str, dict[
     if request.reference_file is None:
         return {}
     reference = request.reference_file.read_text(encoding="utf-8")
+    expected_coding_terms = list(request.expected_coding_terms)
+    expected_english_terms = list(request.expected_english_terms)
     metrics = [
         wer(reference, hypothesis),
         cer(reference, hypothesis),
-        english_term_accuracy(list(request.expected_english_terms), hypothesis),
-        latin_preservation_rate(list(request.expected_english_terms), hypothesis),
-        coding_term_accuracy(list(request.expected_coding_terms), hypothesis),
+        _english_metric(expected_coding_terms, expected_english_terms, hypothesis),
+        _latin_metric(expected_coding_terms, expected_english_terms, hypothesis),
+        coding_term_accuracy(expected_coding_terms, hypothesis),
     ]
     return {metric.metric_name: metric.to_json() for metric in metrics}
 
 
 def _sample_metrics(sample: WorkerSampleRequest, hypothesis: str) -> tuple[WorkerMetricResult, ...]:
+    return _worker_metrics(_quality_metric_results(sample, hypothesis))
+
+
+def _quality_metric_results(sample: WorkerSampleRequest, hypothesis: str) -> list[QualityMetricResult]:
     if sample.reference_file is None:
-        return ()
+        return []
     reference = sample.reference_file.read_text(encoding="utf-8")
-    metrics = [
+    expected_coding_terms = list(sample.expected_coding_terms)
+    expected_english_terms = list(sample.expected_english_terms)
+    return [
         wer(reference, hypothesis),
         cer(reference, hypothesis),
-        english_term_accuracy(list(sample.expected_english_terms), hypothesis),
-        latin_preservation_rate(list(sample.expected_english_terms), hypothesis),
-        coding_term_accuracy(list(sample.expected_coding_terms), hypothesis),
+        _english_metric(expected_coding_terms, expected_english_terms, hypothesis),
+        _latin_metric(expected_coding_terms, expected_english_terms, hypothesis),
+        coding_term_accuracy(expected_coding_terms, hypothesis),
     ]
+
+
+def _worker_metrics(metrics: list[QualityMetricResult]) -> tuple[WorkerMetricResult, ...]:
     return tuple(WorkerMetricResult(metric.metric_name, metric.version, metric.value, metric.numerator, metric.denominator, metric.status) for metric in metrics)
+
+
+def _worker_metric_diagnostics(sample: WorkerSampleRequest, metrics: list[QualityMetricResult]) -> tuple[WorkerMetricDiagnostic, ...]:
+    diagnostics: list[WorkerMetricDiagnostic] = []
+    for metric in metrics:
+        if metric.metric_name not in {"coding_term_accuracy", "english_term_accuracy", "latin_preservation_rate"}:
+            continue
+        for diagnostic in metric_diagnostics(metric):
+            diagnostics.append(
+                WorkerMetricDiagnostic(
+                    sample_id=sample.sample_id,
+                    category=sample.category,
+                    metric_name=diagnostic.metric_name,
+                    view=diagnostic.view,
+                    status=diagnostic.status,
+                    numerator=diagnostic.numerator,
+                    denominator=diagnostic.denominator,
+                    reason_code=diagnostic.reason_code,
+                    count=diagnostic.count,
+                )
+            )
+    return tuple(diagnostics)
+
+
+def _english_metric(expected_coding_terms: list[object], expected_english_terms: list[str], hypothesis: str) -> QualityMetricResult:
+    if expected_coding_terms:
+        return english_term_accuracy_from_records(expected_coding_terms, hypothesis)
+    return english_term_accuracy(expected_english_terms, hypothesis)
+
+
+def _latin_metric(expected_coding_terms: list[object], expected_english_terms: list[str], hypothesis: str) -> QualityMetricResult:
+    if expected_coding_terms:
+        return latin_preservation_rate_from_records(expected_coding_terms, hypothesis)
+    return latin_preservation_rate(expected_english_terms, hypothesis)
 
 
 def _engine_from_request(request: WorkerRequest | WorkerRequestV2) -> object:

@@ -16,6 +16,12 @@ Required frozen pair: `gigaam-multilingual-220m` and `faster-whisper-small-int8`
 
 No publishable coding-pilot result is currently present. Historical file `benchmarks/asr/results/pilot-ru-coding-20260803T121525Z.json` was removed from the publishable results directory because it was schema-invalid legacy evidence: one candidate only, schema v1, `offline_evidence.status=NOT VERIFIED`, and no complete v2 metric matrix. It must not be used for ASR model choice or roadmap completion.
 
+Any private coding-terms triage of zero-valued term metrics must remain
+non-publishable until it proves complete denominator/status semantics without
+leaking transcript, reference, hypothesis, coding-term snippets, backend output
+or private paths. Safe public notes may include only IDs, category, metric name,
+numerator, denominator, status and bounded blocker/reason codes.
+
 ## Environment
 
 | Поле | Значение |
