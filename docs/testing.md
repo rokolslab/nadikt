@@ -202,8 +202,8 @@ zero-match cases.
 
 Controlled inspection rules:
 
-1. Inspect private reference and hypothesis files only under controlled storage
-   outside Git, for example `/home/oitroot/nadikt-controlled`.
+1. Inspect private reference and hypothesis files only under operator-controlled
+   storage outside Git, referred to as `<controlled-root>` in commands.
 2. Do not copy transcripts, references, hypotheses, backend stdout/stderr,
    audio labels or private paths into the repository.
 3. Before interpreting any `0.0` metric, check the aggregate fields emitted by
@@ -261,6 +261,22 @@ If `require_offline_evidence_pass=true` and the observer is unavailable, the
 integration test fails with `FAIL: offline_evidence_not_verified`. That is the
 intended acceptance behavior: successful load/warm-up/transcribe without
 qualified offline evidence is `NOT VERIFIED`, not an acceptance pass.
+
+For the 2026-08-05 Task 11/12 continuation, the operator accepted a narrower
+technical decision: do not repair the WSL2 monitor, do not move the evidence run
+to another environment, and treat the controlled packages as local model runs
+that do not call cloud models. Under that decision a private config may set
+`require_offline_evidence_pass=false` only for controlled, non-publishable
+diagnostics and pilot runs. Such runs must keep `offline_evidence.status=NOT
+VERIFIED`, `publication_allowed=false`, and must not be copied into
+`benchmarks/asr/results/`.
+
+Current private-only status: clean revision `1a7539c4b346` completed a schema v2
+`coding_pilot` run for `gigaam-multilingual-220m` and
+`faster-whisper-small-int8`, with three completed repeats per candidate. The
+result remains outside Git in controlled storage and is not public model-choice
+evidence. The next engineering direction is GigaAM normalization/dictionary work
+with faster-whisper retained as baseline/fallback.
 
 ## Manual Matrix
 

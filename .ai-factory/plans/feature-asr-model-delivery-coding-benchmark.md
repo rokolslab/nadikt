@@ -248,7 +248,16 @@ Commit 3 является обязательным code-freeze checkpoint: ре�
 
   **Зависимости:** задача 12 и успешная schema/privacy validation aggregate artifact.
 
+  **Ограниченный режим 2026-08-05:** publishable evidence не публикуется, потому что `offline_evidence.status=NOT VERIFIED`. Task 13 выполняется только как docs/status sync: `NOT PUBLISHED / NOT DECIDED`, без копирования private artifact в `benchmarks/asr/results/` и без final ASR recommendation.
+
 <!-- Commit checkpoint: tasks 11-13 -->
+
+## Session Notes 2026-08-05
+
+- Commit `1a7539c4b3462f7b23b07a4d88d12b34eae5b433` fixed GigaAM controlled ffmpeg discovery; clean-SHA Task 11 local package probe, dataset bindings and real local ASR lifecycle passed for `gigaam-multilingual-220m` and `faster-whisper-small-int8`.
+- Task 12 private measured run completed outside Git: schema v2 `coding_pilot`, exact frozen two-candidate matrix, three completed repeats per candidate, `outcome=success`, `publication_allowed=false`, blocker `offline_evidence_not_verified`.
+- Operator decision: proceed with GigaAM as working candidate for the next normalization/dictionary engineering iteration, keep faster-whisper as baseline/fallback, do not publish benchmark and keep final ASR decision `NOT DECIDED`.
+- Task 13 scope is limited to public docs/status synchronization in `NOT PUBLISHED / NOT DECIDED` mode. Do not update `benchmarks/asr/results/` from the private artifact.
 
 ## Критерии завершения плана
 

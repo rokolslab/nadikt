@@ -3,7 +3,7 @@
 ## Статус
 
 - Дата шаблона: 2026-07-27.
-- Фактические model runs: `NOT RUN`.
+- Фактические model runs: `PRIVATE ONLY / NOT PUBLISHED`.
 - Решение о модели: `NOT DECIDED`.
 
 Этот документ предназначен для публикации результатов после запуска protocol из `docs/research/local_asr_performance_benchmark_plan.md`. Не выбирайте модель на основании пустого шаблона или dry-run без реальных packages.
@@ -22,11 +22,23 @@ leaking transcript, reference, hypothesis, coding-term snippets, backend output
 or private paths. Safe public notes may include only IDs, category, metric name,
 numerator, denominator, status and bounded blocker/reason codes.
 
-Private rerun status on 2026-08-04: schema v2 normalized scoring emission was
-validated in controlled storage, but no result was published. Publication gate
-remains `BLOCKED` with safe blockers: `run_not_successful`,
-`quality_matrix_incomplete`, `offline_evidence_not_verified` and
-`git_worktree_not_clean`. This status is not model-choice evidence.
+Private rerun status on 2026-08-05: a schema v2 `coding_pilot` run completed in
+controlled storage on clean Nadikt revision `1a7539c4b346` for the exact frozen
+pair `gigaam-multilingual-220m` and `faster-whisper-small-int8`, with three
+completed repeats per candidate. No result artifact was copied to
+`benchmarks/asr/results/`, and no benchmark metrics are published here.
+
+Publication remains `BLOCKED / NOT PUBLISHED` because
+`offline_evidence.status=NOT VERIFIED`. The operator technical decision accepts
+that the controlled packages are local model runs and do not call cloud models,
+but it does not create qualified default-deny evidence and does not grant
+publication. Current model decision remains `NOT DECIDED`.
+
+Private directional note for planning only: continue the next engineering
+iteration with GigaAM as the working local ASR candidate and faster-whisper as a
+baseline/fallback, focusing on post-ASR normalization and dictionary behavior.
+This is not a public model recommendation and must be revisited after publishable
+evidence policy or verified offline evidence exists.
 
 ## Environment
 
@@ -65,8 +77,8 @@ Reference transcripts and audio remain in controlled storage. This public report
 |---|---|---|---|---|---|
 | GigaAM v3 e2e CTC | GigaAM | TBD | TBD | NOT RUN | Verify local loading API |
 | GigaAM v3 e2e RNN-T | GigaAM | TBD | TBD | NOT RUN | Verify local loading API |
-| GigaAM Multilingual 220M | GigaAM | TBD | TBD | NOT RUN | Verify RU+English quality |
-| Whisper small INT8 | faster-whisper / CTranslate2 | TBD | TBD | NOT RUN | Must use local CTranslate2 path |
+| GigaAM Multilingual 220M | GigaAM | private package manifest present | local evaluation approved; redistribution/bundling review required | PRIVATE PASS / NOT PUBLISHED | Local lifecycle and private pilot passed; publication blocked by offline evidence |
+| Whisper small INT8 | faster-whisper / CTranslate2 | private package manifest present | local evaluation approved; redistribution/bundling review required | PRIVATE PASS / NOT PUBLISHED | Local lifecycle and private pilot passed; publication blocked by offline evidence |
 | T-one optional | TBD | TBD | TBD | NOT RUN | Include only if offline package is proven |
 
 ## Performance Results
@@ -96,7 +108,7 @@ Reference transcripts and audio remain in controlled storage. This public report
 | Local package path only | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 | Missing package does not download | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 | Corrupted checksum rejected | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
-| Network blocked run passes | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
+| Network blocked run passes | NOT RUN | NOT RUN | NOT VERIFIED | NOT VERIFIED | NOT RUN |
 | One model loaded at a time | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 | Logs contain no audio/transcript payload | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
 | Result artifacts contain aggregates only | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN |
@@ -111,7 +123,7 @@ Reference transcripts and audio remain in controlled storage. This public report
 | Corrupted synthetic package | PASS | Contract tests cover `checksum_mismatch` before backend factory creation |
 | faster-whisper lifecycle | FAKE-BACKED PASS | CPU INT8 constructor, Hub reject and lazy segment consumption verified with fake SDK |
 | GigaAM local loading | SOURCE-INFORMED / REAL RUN NOT RUN | Source review shows `download_root` cache-style loading can be probed; fake-backed tests verify adapter call shape |
-| Real model load/warm-up/transcribe | NOT RUN | No local real packages in repository/workspace |
+| Real model load/warm-up/transcribe | PRIVATE PASS / NOT PUBLISHED | Controlled packages outside Git pass local lifecycle; publication remains blocked by `offline_evidence.status=NOT VERIFIED` |
 
 Details: `docs/research/local_asr_offline_package_prototype.md`.
 
@@ -122,6 +134,11 @@ Details: `docs/research/local_asr_offline_package_prototype.md`.
 - Candidate selected: `TBD`.
 - Required evidence: quality on `ru_short`, `names_abbrev_numbers`, `pauses_noise`, `long_10m`, resource fit on CPU-only machine, local package validation, license review.
 - Current decision: `NOT DECIDED`.
+
+Private planning direction: use GigaAM as the working candidate for the next
+normalization/dictionary iteration, with faster-whisper retained as
+baseline/fallback. This direction is based on private controlled evidence only
+and is not a published benchmark recommendation.
 
 ### Russian + English Mode
 
@@ -140,14 +157,14 @@ Details: `docs/research/local_asr_offline_package_prototype.md`.
 - WSL2 Ubuntu measurements do not replace Windows 10/11 acceptance measurements.
 - i3 12th generation development results do not redefine the MVP hardware baseline from ТЗ.
 - Dry-run validates manifests and safe failure behavior only; it does not measure ASR quality.
-- Offline package prototype validates lifecycle gates and fake-backed adapter behavior only; it does not prove real SDK package loading or ASR quality.
+- Private controlled runs validate real local package lifecycle and a private coding pilot, but they do not provide publishable benchmark evidence while `offline_evidence.status=NOT VERIFIED`.
 - Reference transcripts and raw audio are controlled data and are not published in this report.
 
 ## Recommendation
 
-Do not fill this section until all required candidates have completed offline acceptance, quality metrics, resource measurements and privacy audit.
+Do not fill this section until all required candidates have completed offline acceptance, quality metrics, resource measurements and privacy audit with publishable evidence.
 
 - Recommended Russian candidate: `TBD`.
 - Recommended Russian + English candidate: `TBD`.
-- Deferred risks: `TBD`.
+- Deferred risks: `offline_evidence_not_verified`; Windows baseline, long dictation, installer/model-pack delivery, redistribution approval and production normalization/dictionary behavior remain open.
 - Follow-up Windows verification: `TBD`.
