@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any, Callable
 
 from nadikt.domain.ports.asr import (
@@ -40,6 +43,7 @@ class GigaAMAsrEngine:
         self._module_loader = module_loader or (lambda: importlib.import_module("gigaam"))
         self._model: Any | None = None
         self._loader_model_name: str | None = None
+        self._ffmpeg_path: Path | None = None
         self._cancel_requested = False
 
     def metadata(self) -> AsrModelMetadata:
@@ -49,6 +53,7 @@ class GigaAMAsrEngine:
         started = time.monotonic()
         LOGGER.debug("gigaam_load_start", extra=safe_engine_log_context(self._metadata))
         package_dir = options.local_package_path
+        self._ffmpeg_path = _resolve_ffmpeg_path(package_dir, options.inference_defaults)
         if not package_dir.is_dir():
             raise _engine_error(AsrFailureCode.MISSING_PACKAGE, "load", recoverable=True)
         loader_model_name = _loader_model_name(self._metadata.candidate_id, options.inference_defaults)
@@ -109,7 +114,8 @@ class GigaAMAsrEngine:
             self._cancel_requested = False
             raise _engine_error(AsrFailureCode.CANCELLED, "transcribe", recoverable=True)
         try:
-            text = self._model.transcribe(str(segment.audio_path))
+            with _ffmpeg_on_path(self._ffmpeg_path):
+                text = self._model.transcribe(str(segment.audio_path))
         except Exception:
             LOGGER.error("gigaam_transcribe_failed", extra={**safe_engine_log_context(self._metadata), "segment_id": segment.segment_id, "error_code": AsrFailureCode.TRANSCRIBE_FAILED.value})
             raise _engine_error(AsrFailureCode.TRANSCRIBE_FAILED, "transcribe", recoverable=True) from None
@@ -153,6 +159,52 @@ def _missing_required_cache_files(loader_model_name: str, package_dir: Path) -> 
     if not required:
         return ("unknown-layout",)
     return tuple(sorted(relative_path for relative_path in required if not (package_dir / relative_path).is_file()))
+
+
+def _resolve_ffmpeg_path(package_dir: Path, inference_defaults: object) -> Path | None:
+    defaults = inference_defaults if isinstance(inference_defaults, dict) else {}
+    configured = defaults.get("ffmpeg_path") or defaults.get("ffmpeg_executable")
+    if isinstance(configured, str) and configured:
+        path = Path(configured)
+        if not path.is_absolute():
+            path = package_dir / path
+        if path.is_file():
+            LOGGER.info("[FIX] gigaam_ffmpeg_path_configured", extra={"outcome": "available"})
+            return path
+        LOGGER.warning("[FIX] gigaam_ffmpeg_path_configured", extra={"outcome": "missing"})
+        return None
+
+    controlled_root = _controlled_root_from_package_dir(package_dir)
+    if controlled_root is None:
+        return None
+    path = controlled_root / "tools" / "ffmpeg" / "linux-x86_64" / "ffmpeg"
+    if path.is_file():
+        LOGGER.info("[FIX] gigaam_ffmpeg_path_discovered", extra={"outcome": "available"})
+        return path
+    return None
+
+
+def _controlled_root_from_package_dir(package_dir: Path) -> Path | None:
+    parts = package_dir.parts
+    if len(parts) < 3 or parts[-3:-1] != ("models", "packages"):
+        return None
+    return package_dir.parents[2]
+
+
+@contextmanager
+def _ffmpeg_on_path(ffmpeg_path: Path | None) -> Iterator[None]:
+    if ffmpeg_path is None:
+        yield
+        return
+    original_path = os.environ.get("PATH", "")
+    ffmpeg_dir = str(ffmpeg_path.parent)
+    path_parts = original_path.split(os.pathsep) if original_path else []
+    if ffmpeg_dir not in path_parts:
+        os.environ["PATH"] = ffmpeg_dir + (os.pathsep + original_path if original_path else "")
+    try:
+        yield
+    finally:
+        os.environ["PATH"] = original_path
 
 
 def _engine_error(code: AsrFailureCode, phase: str, *, recoverable: bool) -> AsrEngineError:

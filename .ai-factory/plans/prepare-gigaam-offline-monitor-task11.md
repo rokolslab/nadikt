@@ -36,6 +36,13 @@ Rationale: План закрывает внешние prerequisites для ре�
 - Offline evidence для acceptance требует qualified WSL2/Linux default-deny profile: positive/negative controls, process-tree observation, finalized-after-reap, zero attempts, zero missed events.
 - Если GigaAM assets или qualified monitor недоступны, итогом является явный `BLOCKED`/`NOT VERIFIED` status artifact, а не placeholder metrics.
 
+## Technical Decision 2026-08-05
+
+- Не чинить WSL2 monitor и не переносить evidence run в среду с другими сетевыми controls.
+- Принято утверждение operator-а: controlled GigaAM/faster-whisper packages являются локальными моделями, и текущий код не обращается к cloud model.
+- Это решение не создаёт `offline_evidence.status=PASS` и не делает private benchmark publishable; publication gate остаётся закрытым через `offline_evidence_not_verified`.
+- Для возврата к основному Task 11 допустим статус `accepted_without_qualified_monitor` по local-model/no-cloud assertion, если дальнейший шаг не требует publishable benchmark evidence.
+
 ## Tasks
 
 ### Фаза 1: GigaAM controlled package
@@ -52,15 +59,15 @@ Rationale: План закрывает внешние prerequisites для ре�
 
 ### Фаза 3: Qualified offline evidence
 
-- [ ] **Task 5: Подготовить qualified WSL2/Linux default-deny evidence profile.** Реализовать или подключить operator-level mechanism `qualified-wsl2-default-deny-v1`, который блокирует исходящую сеть для полного worker process tree и наблюдает попытки до reap/finalize. Выполнить positive control (synthetic network attempt observed -> `FAIL`/control pass) и negative control (zero attempts -> eligible `PASS`). Raw packet/socket/process captures хранить только в private workspace и уничтожать/не публиковать после audit. Логировать только mechanism/version, monitor interval, aggregate attempt/missed counts и outcome.
+- [x] **Task 5: Superseded by technical decision; не готовить qualified WSL2/Linux default-deny evidence profile.** Operator decision от 2026-08-05 запрещает чинить WSL2 monitor и переносить evidence run. Existing blocker `qualified_wsl2_default_deny_not_available` сохранён как факт, без попытки получить monitor `PASS`.
 
-- [ ] **Task 6: Связать offline evidence с lifecycle/preflight identity.** Для acceptance run evidence должен быть связан с run nonce, full clean Git SHA, lock digest prefix, package digest prefixes, process start identity и monitor interval. `PASS` допустим только при finalized-after-reap, zero attempts, zero missed events и passed controls; observed attempt -> `FAIL`; stale/self-declared/partial evidence -> `NOT VERIFIED`. Обновить `<controlled-root>/runs/task11-preflight-status.json` безопасными aggregate fields без raw evidence.
+- [x] **Task 6: Зафиксировать technical-decision identity вместо qualified evidence identity.** `<controlled-root>/runs/task11-preflight-status.json` обновлён safe aggregate fields: decision ID, scope `local_model_no_cloud_assertion_only`, `offline_evidence.status=NOT VERIFIED`, `does_not_grant_publication=true`. Raw evidence не добавлялся.
 
 ### Фаза 4: Exact two-candidate preflight status
 
-- [ ] **Task 7: Выполнить exact two-candidate Task 11 preflight без публикации benchmark.** На clean SHA основного repo запустить validators: inventory/package integrity, dataset bindings, оба package probes, opt-in lifecycle и offline evidence self-test. Если все prerequisites выполнены, status artifact должен показать `candidate_matrix_complete`, package/lifecycle success для обоих candidates и `offline_evidence.status=PASS`. Если нет, status artifact должен явно перечислить blockers без placeholder metrics. Логировать только IDs, phases, digest prefixes, aggregate counts/outcomes.
+- [x] **Task 7: Выполнить exact two-candidate preflight без публикации benchmark и записать blockers.** Existing private status сохраняет `candidate_matrix_complete` и `offline_evidence.status=NOT VERIFIED`; добавлен accepted technical decision. Повторная real local ASR load проверка 2026-08-05 проходит для обоих candidates после controlled ffmpeg path fix. Placeholder metrics не публиковались.
 
-- [ ] **Task 8: Сформировать решение о возврате к основному Task 11/12.** Если preflight complete и evidence `PASS`, вернуться к основному `.ai-factory/PLAN.md` Task 11 и выполнить clean-SHA real preflight; затем Task 12 measured pilot. Если остались blockers, оставить основной Task 11 неотмеченным и сохранить `<controlled-root>/runs/task11-preflight-status.json` как private status для следующей сессии. Не публиковать `benchmarks/asr/results/` и не обновлять public benchmark results до complete v2 matrix.
+- [x] **Task 8: Сформировать решение о возврате к основному Task 11/12.** Возврат допустим только как non-publishable continuation по принятому local-model/no-cloud assertion. Основной publishable gate остаётся закрыт: `offline_evidence_not_verified`; `benchmarks/asr/results/` и public benchmark results не обновлять до отдельного решения о publication evidence policy.
 
 ## Commit Plan
 
@@ -108,3 +115,12 @@ NADIKT_REAL_ASR_ASSETS=1 NADIKT_REAL_ASR_CONFIG=<controlled-root>/private-config
 - Exact two-candidate dry-run preflight passed with `outcome=dry_run`, `binding_status=bindings_valid` and `offline_evidence.status=NOT VERIFIED`.
 - Private measured coding-pilot run completed outside Git at `/home/oitroot/nadikt-controlled/runs/pilot-ru-coding-measured-private.json`: both candidates completed 3/3 repeats with `outcome=success`; output remains non-publishable because `offline_evidence.status=NOT VERIFIED` and Git worktree is dirty.
 - Task 5 is blocked in the current WSL2 environment: `unshare -n` returns `Operation not permitted`, and `strace`/iptables/nft are not available. Current code path also keeps `WorkerSupervisor` evidence fail-closed as `qualified_monitor_not_configured` until a qualified monitor is wired.
+
+## Session Notes 2026-08-05
+
+- Operator technical decision: не чинить WSL2 monitor и не переносить evidence run; принять утверждение, что controlled local model packages не обращаются к cloud model.
+- Updated private status artifact keeps `publication_allowed=false` and `offline_evidence.status=NOT VERIFIED`, but records `accepted_without_qualified_monitor` for the local-model/no-cloud assertion.
+- Updated private config sets `require_offline_evidence_pass=false` for continuation under this decision; this is not a publishable benchmark evidence waiver.
+- Regression root cause: GigaAM SDK invokes `ffmpeg` by executable name; controlled ffmpeg existed outside Git but was not on worker `PATH`.
+- Fixed `GigaAMAsrEngine` to use configured `ffmpeg_path` or discover the controlled local tool under `<controlled-root>/tools/ffmpeg/linux-x86_64/ffmpeg`, temporarily adding only that directory to `PATH` during SDK `transcribe`.
+- Verification `NADIKT_REAL_ASR_ASSETS=1 NADIKT_REAL_ASR_CONFIG=/home/oitroot/nadikt-controlled/private-config.json /home/oitroot/nadikt-controlled/venv-benchmark-gigaam/bin/python -B -m unittest tests.integration.test_real_local_asr_load` now passes for both candidates with `offline_evidence.status=NOT VERIFIED` and `require_offline_evidence_pass=false`.

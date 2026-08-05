@@ -104,7 +104,7 @@ class WorkerSupervisorTest(unittest.TestCase):
         self.assertEqual("fail", result.worker_result.worker_status)
         self.assertNotIn("NADIKT_CONTROLLED_CANARY", rendered)
 
-    def test_stderr_is_privacy_error_and_not_published(self) -> None:
+    def test_private_stderr_is_privacy_error_and_not_published(self) -> None:
         request = _request()
         process = _FakeProcess(WorkerResult(request.nonce, request.package_id, request.candidate_id, request.backend, "success").to_worker_json(), stderr="Traceback (/private/audio.wav)")
 
@@ -118,6 +118,23 @@ class WorkerSupervisorTest(unittest.TestCase):
         rendered = str([event.to_json() for event in result.timeline])
         self.assertEqual("privacy_error", result.supervisor_outcome)
         self.assertNotIn("/private/audio.wav", rendered)
+
+    def test_benign_stderr_is_audited_without_blocking_worker_result(self) -> None:
+        request = _request()
+        process = _FakeProcess(WorkerResult(request.nonce, request.package_id, request.candidate_id, request.backend, "success").to_worker_json(), stderr="sdk warning: local cpu fallback")
+
+        result = WorkerSupervisor(
+            timeout_seconds=1.0,
+            sample_interval_seconds=100.0,
+            sampler_factory=lambda: _FakeSampler(),
+            popen_factory=lambda *_args, **_kwargs: process,
+        ).run(request)
+
+        rendered = [event.to_json() for event in result.timeline]
+        self.assertEqual("completed", result.supervisor_outcome)
+        self.assertEqual("success", result.worker_result.worker_status)
+        self.assertIn("partial", [event["outcome"] for event in rendered])
+        self.assertNotIn("sdk warning", str(rendered))
 
     def test_oversized_output_is_protocol_error_without_raw_capture(self) -> None:
         request = _request()

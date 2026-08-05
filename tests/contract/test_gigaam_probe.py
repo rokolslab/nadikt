@@ -4,6 +4,7 @@ import sys
 import tempfile
 import types
 import unittest
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -114,6 +115,36 @@ class GigaAMProbeTest(unittest.TestCase):
                 engine.transcribe_segment(_segment(audio, duration=1.0))
 
         self.assertNotIn("secret-canary", repr(captured.exception))
+
+    def test_configured_ffmpeg_path_is_available_only_during_transcribe(self) -> None:
+        observed: list[bool] = []
+        original_path = os.environ.get("PATH", "")
+
+        class FakeModel:
+            def __init__(self, expected_dir: Path) -> None:
+                self._expected_dir = str(expected_dir)
+
+            def transcribe(self, _audio_path: str) -> str:
+                observed.append(self._expected_dir in os.environ.get("PATH", "").split(os.pathsep))
+                return "ok"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_required_files(root)
+            ffmpeg = root / "tools" / "ffmpeg"
+            ffmpeg.parent.mkdir(parents=True)
+            ffmpeg.write_bytes(b"synthetic")
+            audio = root / "sample.wav"
+            audio.write_bytes(b"not-real-audio")
+            module = types.SimpleNamespace(load_model=lambda *_args, **_kwargs: FakeModel(ffmpeg.parent))
+            engine = GigaAMAsrEngine(_metadata(), lambda: module)
+
+            engine.load(AsrLoadOptions(root, {"gigaam_model_name": "v3_e2e_ctc", "ffmpeg_path": str(ffmpeg)}))
+            transcript = engine.transcribe_segment(_segment(audio, duration=1.0))
+
+        self.assertEqual("ok", transcript.text)
+        self.assertEqual([True], observed)
+        self.assertEqual(original_path, os.environ.get("PATH", ""))
 
 
 def _metadata() -> object:

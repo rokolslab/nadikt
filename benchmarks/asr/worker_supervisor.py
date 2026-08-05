@@ -105,9 +105,7 @@ class WorkerSupervisor:
         if capture.oversized:
             timeline.add("capture", "protocol_error")
             return SupervisedWorkerResult(_failure_worker_result(request, "protocol_error", "protocol_error"), resource_report, offline_evidence, "protocol_error", timeline.events)
-        if capture.stderr.strip():
-            timeline.add("capture", "privacy_error")
-            return SupervisedWorkerResult(_failure_worker_result(request, "fail", "privacy_error"), resource_report, offline_evidence, "privacy_error", timeline.events)
+        timeline.add("stderr", "partial" if capture.stderr.strip() else "completed")
         timeline.add("capture", "completed")
         audit = audit_text_artifact(capture.stdout + capture.stderr, canary=_worker_canary(request))
         if audit.has_violation:
