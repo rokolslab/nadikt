@@ -67,6 +67,7 @@ docs/
 На 2026-07-27 создана первая минимальная часть целевой структуры для ASR benchmark:
 
 - `src/nadikt/domain/ports/asr.py` - SDK-neutral контракт ASR engine lifecycle, metadata, capabilities и segment transcript result.
+- `src/nadikt/domain/text/` - первые pure-domain value objects и deterministic normalization mechanics для coding-term dictionary spike; без benchmark data, SQLite, UI, platform или ASR SDK imports.
 - `src/nadikt/infrastructure/asr/` - optional SDK-backed ASR probe adapters для GigaAM/faster-whisper с lazy imports; fake-backed на текущем этапе, не composition root.
 - `benchmarks/asr/` - standard-library helpers для dataset/model manifests, versioned run profiles/result schemas, dry-run, local package probe runner, resource timing, segmentation validation, package integrity, privacy audit и quality metrics.
 - `model_packs/` - documentation и example inventory manifests без model weights.
@@ -174,5 +175,6 @@ class FinishDictation:
 - Не дублировать бизнес-логику для Windows и Linux.
 - Не выполнять автоматическую загрузку модели при отсутствии локального пакета.
 - Не логировать аудио, транскрипцию, словарь или clipboard даже на уровне `DEBUG`.
+- Не размещать benchmark-specific coding-term mappings в production domain text modules; domain предоставляет generic mechanics, а benchmark adapters владеют public scoring mappings.
 - Не добавлять CQRS, domain events или отдельный repository для каждого типа автоматически; вводить их только при реальной пользе.
 - Не превращать технические подсистемы в microservices: сетевое разделение противоречит автономности и усложняет поставку.

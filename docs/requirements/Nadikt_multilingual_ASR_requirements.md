@@ -194,6 +194,13 @@ Online acquisition допускается только как installer-time fal
 - названия продуктов;
 - буквенно-цифровые обозначения.
 
+Для coding-dictation сценариев словарь и normalizer являются отдельным
+engine-independent post-ASR компонентом. GigaAM может использоваться как working
+candidate в private diagnostic runs, но правила замен не должны жить внутри
+GigaAM/faster-whisper adapters и не выбирают final ASR model без publishable
+benchmark evidence. Raw ASR metrics и normalized dictionary diagnostics
+публикуются как отдельные views.
+
 ### M09. Безопасное переключение движка
 
 При смене режима программа должна:

@@ -36,6 +36,22 @@ class AsrAdapterImportBoundariesTest(unittest.TestCase):
         self.assertIsNone(re.search(r"^\s*(from|import)\s+faster_whisper", source, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*(from|import)\s+gigaam", source, re.MULTILINE))
 
+    def test_domain_text_does_not_import_external_boundaries(self) -> None:
+        forbidden = (
+            "benchmarks.asr",
+            "nadikt.infrastructure",
+            "sqlite3",
+            "PySide6",
+            "faster_whisper",
+            "gigaam",
+        )
+        text_dir = SRC / "nadikt/domain/text"
+
+        for path in text_dir.glob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            for token in forbidden:
+                self.assertNotIn(token, source, f"forbidden_import:{path.name}:{token}")
+
     def test_runtime_asr_adapters_do_not_import_benchmark_harness(self) -> None:
         for relative in ("nadikt/infrastructure/asr/faster_whisper.py", "nadikt/infrastructure/asr/gigaam.py"):
             source = (SRC / relative).read_text(encoding="utf-8")

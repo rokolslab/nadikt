@@ -62,6 +62,7 @@ Nadikt - автономная фоновая утилита голосового
 ## Текущие артефакты реализации
 
 - Начальный SDK-neutral ASR contract находится в `src/nadikt/domain/ports/asr.py`.
+- Начальный pure-domain text normalization/dictionary spike находится в `src/nadikt/domain/text/`; он предоставляет generic coding-term rule mechanics без ASR SDK, SQLite, UI и benchmark-private данных.
 - Локальный ASR benchmark protocol, manifests, dry-run, offline package probe и results template находятся в `docs/research/local_asr_performance_benchmark_plan.md`, `docs/research/local_asr_offline_package_prototype.md`, `benchmarks/asr/`, `model_packs/` и `docs/research/local_asr_performance_benchmark_results.md`.
 - Benchmark dry run и local package probe не скачивают модели, не выполняют сетевые вызовы и проверяют manifests/package integrity/safe failure outcomes; real model loads выполняются только при наличии локальных packages вне Git.
 

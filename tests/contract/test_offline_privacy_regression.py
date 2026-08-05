@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from benchmarks.asr.local_model_probe import run_local_model_probe
 from benchmarks.asr.manifests import load_json, validate_model_inventory
+from benchmarks.asr.privacy_audit import audit_text_artifact
 from nadikt.domain.ports.asr import AsrLoadOptions, AsrSegmentInput
 from nadikt.infrastructure.asr.faster_whisper import FasterWhisperAsrEngine
 
@@ -91,6 +92,25 @@ class OfflinePrivacyRegressionTest(unittest.TestCase):
         self.assertNotIn(canary, rendered_logs)
         self.assertNotIn("client-secret-audio", rendered_logs)
         self.assertIn("faster_whisper_transcribe_failed", rendered_logs)
+
+    def test_privacy_audit_flags_dictionary_and_normalization_payload_markers(self) -> None:
+        rendered = json.dumps(
+            {
+                "normalized_text": "NADIKT_CONTROLLED_CANARY",
+                "dictionary_canonical": "payload",
+                "spoken_variant": "payload",
+                "backend_stdout": "payload",
+                "backend_stderr": "payload",
+                "exception_string": "payload",
+            },
+            ensure_ascii=False,
+        )
+
+        result = audit_text_artifact(rendered, canary="NADIKT_CONTROLLED_CANARY")
+
+        self.assertTrue(result.has_violation)
+        self.assertTrue(result.canary_present)
+        self.assertGreaterEqual(result.forbidden_payload_count, 6)
 
 
 def _inventory_payload(sha256: str) -> dict[str, object]:

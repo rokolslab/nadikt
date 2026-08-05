@@ -23,6 +23,7 @@ This prototype does not download model weights, does not commit model weights an
 | GigaAM probe | `src/nadikt/infrastructure/asr/gigaam.py` uses verified package directory as GigaAM SDK `download_root` cache and calls `load_model` only after package validation | SOURCE-INFORMED, FAKE-BACKED TESTED |
 | Single-engine runner | `benchmarks/asr/local_model_probe.py` validates one package at a time and closes the current probe before loading another | FAKE-BACKED TESTED |
 | Privacy regression | Contract tests cover Hub-name rejection, corrupted packages, optional import safety and log/stdout redaction | DONE |
+| Coding-term dictionary privacy | Domain text rules, benchmark adapter and privacy audit tests cover safe repr/diagnostics without transcript, normalized text or dictionary payload | DONE |
 
 ## Commands Run
 
@@ -113,6 +114,7 @@ The prototype intentionally does not print:
 - transcript or hypothesis text;
 - reference text;
 - user dictionary entries;
+- normalized text or coding-term dictionary canonical/spoken variants;
 - clipboard payload;
 - absolute user paths;
 - tokens or URLs.

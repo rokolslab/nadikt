@@ -158,6 +158,16 @@ class QualityMetricsTest(unittest.TestCase):
         self.assertEqual(2, normalized["latin_preservation_rate_normalized"].numerator)
         self.assertIn("coding-term-normalization-ru-pronunciation-v1", normalized["coding_term_accuracy_normalized"].version)
 
+    def test_normalized_metrics_keep_existing_policy_names(self) -> None:
+        records = [
+            {"canonical": "FastAPI route", "accepted_variants": ["FastAPI route"], "expected_occurrences": 1, "require_latin": True},
+        ]
+
+        normalized = normalized_coding_term_metrics(records, "фаст апи роут")
+
+        self.assertEqual("coding_term_accuracy_normalized", normalized[2].metric_name)
+        self.assertEqual("quality-metrics-v2:coding-term-normalization-ru-pronunciation-v1", normalized[2].version)
+
     def test_zero_denominator_is_not_applicable(self) -> None:
         result = coding_term_accuracy([], "любой текст")
 

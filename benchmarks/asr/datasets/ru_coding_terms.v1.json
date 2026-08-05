@@ -30,7 +30,7 @@
       "expected_english_terms": ["docker compose", "React component"],
       "expected_coding_terms": [
         {"term_id": "docker-compose", "canonical": "docker compose", "accepted_variants": ["docker compose", "docker-compose"], "expected_occurrences": 1, "require_latin": true},
-        {"term_id": "react-component", "canonical": "React component", "accepted_variants": ["React component", "React-компонент"], "expected_occurrences": 1, "require_latin": true}
+        {"term_id": "react-component", "canonical": "React component", "accepted_variants": ["React component", "React-component"], "expected_occurrences": 1, "require_latin": true}
       ],
       "segmentation_policy_id": "seg-25s-no-overlap-v1",
       "notes": "Coding dictation public metadata."
@@ -49,6 +49,38 @@
       ],
       "segmentation_policy_id": "seg-25s-no-overlap-v1",
       "notes": "Coding workflow term coverage."
+    },
+    {
+      "sample_id": "ru_coding_terms_004",
+      "category": "ru_coding_terms",
+      "duration_seconds": 17.0,
+      "language_profile": "ru_coding_terms",
+      "audio_label": "controlled-audio:ru_coding_terms_004",
+      "reference_label": "controlled-reference:ru_coding_terms_004",
+      "expected_english_terms": ["GitHub Actions", "CI/CD", "Node.js"],
+      "expected_coding_terms": [
+        {"term_id": "github-actions", "canonical": "GitHub Actions", "accepted_variants": ["GitHub Actions"], "expected_occurrences": 1, "require_latin": true},
+        {"term_id": "ci-cd", "canonical": "CI/CD", "accepted_variants": ["CI/CD", "CI CD"], "expected_occurrences": 1, "require_latin": true},
+        {"term_id": "node-js", "canonical": "Node.js", "accepted_variants": ["Node.js", "Node JS", "NodeJS"], "expected_occurrences": 1, "require_latin": true}
+      ],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Focused profile metadata for tooling and identifier-like coding terms. Not part of coding-pilot-v1 run profile until private bindings and durations are synchronized."
+    },
+    {
+      "sample_id": "ru_coding_terms_005",
+      "category": "ru_coding_terms",
+      "duration_seconds": 15.0,
+      "language_profile": "ru_coding_terms",
+      "audio_label": "controlled-audio:ru_coding_terms_005",
+      "reference_label": "controlled-reference:ru_coding_terms_005",
+      "expected_english_terms": ["C++", ".NET", "C#"],
+      "expected_coding_terms": [
+        {"term_id": "c-plus-plus", "canonical": "C++", "accepted_variants": ["C++", "C plus plus"], "expected_occurrences": 1, "require_latin": true},
+        {"term_id": "dotnet", "canonical": ".NET", "accepted_variants": [".NET", "dotnet", "Dot NET"], "expected_occurrences": 1, "require_latin": true},
+        {"term_id": "c-sharp", "canonical": "C#", "accepted_variants": ["C#", "C sharp"], "expected_occurrences": 1, "require_latin": true}
+      ],
+      "segmentation_policy_id": "seg-25s-no-overlap-v1",
+      "notes": "Focused profile metadata for symbol-heavy coding terms. Not part of coding-pilot-v1 run profile until private bindings and durations are synchronized."
     }
   ]
 }

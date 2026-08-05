@@ -13,7 +13,10 @@ python3 -m unittest discover -s tests
 ```
 
 Команда проверяет manifest validation, dry-run, privacy audit, quality metrics
-и ASR contract redaction без реальных моделей и без пользовательских payload.
+и ASR/text-domain contract redaction без реальных моделей и без пользовательских
+payload. Unit tests under `tests/unit/` cover pure domain text normalization and
+dictionary conflict semantics; contract tests cover ASR benchmark harness,
+privacy-safe metrics and import boundaries.
 
 ASR benchmark environment metadata находится в `pyproject.toml` и
 `requirements/benchmark/`. Эти locks относятся только к benchmark/probe runs и
@@ -189,6 +192,12 @@ The run profile rejects single-candidate filters, missing/extra/duplicate candid
 repeats below 3, dataset revision drift and duration drift before worker spawn. The
 measured runner must use the same `--run-profile` and complete both candidates.
 
+If `coding_pilot.v1.json` gains scored samples or duration changes, update
+`benchmarks/asr/run_profiles/coding_pilot.v1.json`, controlled private bindings
+and expected public manifest digest together. Focused metadata in
+`ru_coding_terms.v1.json` is not part of the frozen coding-pilot matrix until the
+run profile and private bindings are synchronized.
+
 If external default-deny network observation is not active, the publishable
 artifact must keep `offline_evidence.status=NOT VERIFIED` even when load and
 transcription phases succeed.
@@ -217,7 +226,10 @@ Controlled inspection rules:
    `sample_id`, `category`, `metric_name`, `numerator`, `denominator`, `status`
    and bounded `reason_code` values.
 6. Even at `DEBUG` level, logs and notes must not include transcript,
-   reference, hypothesis or coding-term snippets.
+    reference, hypothesis or coding-term snippets.
+7. Normalized coding-term metrics are diagnostic post-ASR views. They do not
+   replace raw ASR quality metrics and cannot justify model selection while
+   `offline_evidence.status` is not `PASS`.
 
 Allowed initial reason codes are `not_applicable`, `exact_latin_match`,
 `accepted_variant_match`, `latin_missing`, `variant_missing`,

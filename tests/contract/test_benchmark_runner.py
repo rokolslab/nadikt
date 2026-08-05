@@ -546,7 +546,7 @@ def _write_dataset(root: Path) -> Path:
                 "language_profile": "ru",
                 "audio_label": "controlled-audio:coding_001",
                 "reference_label": "controlled-reference:coding_001",
-                "expected_english_terms": [],
+                "expected_english_terms": ["pytest"],
                 "expected_coding_terms": [
                     {"term_id": "pytest", "canonical": "pytest", "accepted_variants": ["pytest"], "expected_occurrences": 1, "require_latin": True}
                 ],

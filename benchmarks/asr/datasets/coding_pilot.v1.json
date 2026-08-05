@@ -54,7 +54,7 @@
       "expected_english_terms": ["docker compose", "React component"],
       "expected_coding_terms": [
         {"term_id": "docker-compose", "canonical": "docker compose", "accepted_variants": ["docker compose", "docker-compose"], "expected_occurrences": 1, "require_latin": true},
-        {"term_id": "react-component", "canonical": "React component", "accepted_variants": ["React component", "React-компонент"], "expected_occurrences": 1, "require_latin": true}
+        {"term_id": "react-component", "canonical": "React component", "accepted_variants": ["React component", "React-component"], "expected_occurrences": 1, "require_latin": true}
       ],
       "segmentation_policy_id": "seg-25s-no-overlap-v1",
       "notes": "Scored coding-term sample metadata."

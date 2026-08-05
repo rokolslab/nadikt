@@ -328,6 +328,33 @@ class BenchmarkWorkerBoundaryTest(unittest.TestCase):
         self.assertIn("raw", {diagnostic.view for diagnostic in diagnostics})
         self.assertIn("normalized", {diagnostic.view for diagnostic in diagnostics})
 
+    def test_worker_normalized_metrics_do_not_serialize_domain_or_payload_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            audio = root / "scored.wav"
+            reference = root / "reference.txt"
+            audio.write_bytes(b"synthetic")
+            reference.write_text("synthetic reference", encoding="utf-8")
+            sample = WorkerSampleRequest(
+                sample_id="scored_001",
+                category="ru_coding_terms",
+                audio_file=audio,
+                reference_file=reference,
+                duration_seconds=1.0,
+                scored=True,
+                expected_coding_terms=(
+                    {"canonical": "pytest", "accepted_variants": ["pytest"], "expected_occurrences": 1, "require_latin": True},
+                ),
+            )
+
+            metrics = benchmark_worker._sample_metrics(sample, "пайтест")
+            payload = json.dumps([metric.to_json() for metric in metrics], ensure_ascii=False)
+
+        self.assertNotIn("пайтест", payload)
+        self.assertNotIn("CodingTermRule", payload)
+        self.assertNotIn("NormalizationResult", payload)
+        self.assertNotIn("normalized_text", payload)
+
     def test_worker_result_v2_round_trips_safe_metric_diagnostics(self) -> None:
         result = WorkerResultV2(
             nonce="nonce-v2",

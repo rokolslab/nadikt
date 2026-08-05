@@ -180,6 +180,19 @@ English term accuracy считается по заранее заданному 
 
 Постобработка Nadikt, пользовательский словарь и нормализация должны измеряться отдельно от raw ASR comparison, чтобы не скрыть качество backend.
 
+Coding-term normalization для текущего spike является post-ASR diagnostic view.
+Raw `expected_coding_terms.accepted_variants` для `require_latin=true` не должны
+содержать кириллические spoken variants: такие варианты принадлежат versioned
+normalization policy, а не raw ASR scoring. Любой GigaAM-focused анализ остаётся
+private non-comparable triage, пока не выполнены schema v2 aggregate, exact frozen
+matrix, privacy audit PASS и `offline_evidence.status=PASS`.
+
+`benchmark_result.v2.schema.json` считается immutable для publishable
+coding-pilot aggregate. Spike не добавляет поля в v2 in-place; policy labels
+передаются через существующие `metric_name`, `metric_version`, `view`, `status`,
+`numerator` и `denominator`. Новый result shape требует новой schema version и
+отдельного docs gate.
+
 Для coding-pilot triage нулевые значения `coding_term_accuracy`,
 `english_term_accuracy` и `latin_preservation_rate` сначала проходят
 denominator/status gate. Operator должен проверить `status`, `numerator`,

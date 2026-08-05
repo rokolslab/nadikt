@@ -40,6 +40,12 @@ baseline/fallback, focusing on post-ASR normalization and dictionary behavior.
 This is not a public model recommendation and must be revisited after publishable
 evidence policy or verified offline evidence exists.
 
+Current coding-term normalization spike status: repository code now contains a
+pure `src/nadikt/domain/text/` rule/normalization/dictionary spike and a
+benchmark-only adapter for public coding-term pronunciation mappings. This adds a
+diagnostic normalized view only; it does not change `NOT DECIDED`, does not add a
+publishable result and does not weaken the `offline_evidence.status=PASS` gate.
+
 ## Environment
 
 | Поле | Значение |

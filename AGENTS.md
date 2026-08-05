@@ -48,13 +48,16 @@ nadikt/
 |   `-- windows_insertion/              # disposable spike target/clipboard/input safety
 |-- src/
 |   `-- nadikt/
-|       |-- domain/ports/asr.py          # начальный ASR contract skeleton общего ядра
+|       |-- domain/
+|       |   |-- ports/asr.py             # начальный ASR contract skeleton общего ядра
+|       |   `-- text/                    # pure-domain coding-term normalization/dictionary spike
 |       `-- infrastructure/asr/          # optional fake-backed SDK probe adapters
 |-- benchmarks/
 |   `-- asr/                             # manifests, run profiles, dry-run и benchmark helpers
 |-- model_packs/                         # docs и example manifests; без model weights
 |-- tests/
-|   `-- contract/                        # contract tests для ASR benchmark harness
+|   |-- contract/                        # contract tests для ASR benchmark harness
+|   `-- unit/                            # unit tests для pure domain text logic
 |-- .ai-factory.json                    # метаданные установки AI Factory
 |-- AGENTS.md                           # карта проекта для агентов
 |-- CONTRIBUTING.md                     # правила contribution и pull requests
@@ -74,6 +77,10 @@ nadikt/
 | `docs/research/local_asr_performance_benchmark_plan.md` | Protocol локального ASR benchmark, метрики, offline/privacy gates и dry-run command. |
 | `docs/research/local_asr_performance_benchmark_results.md` | Шаблон результатов benchmark и decision matrix без выбора модели до измерений. |
 | `src/nadikt/domain/ports/asr.py` | Начальный SDK-neutral ASR contract общего ядра. |
+| `src/nadikt/domain/text/coding_terms.py` | Generic privacy-safe coding-term rule/policy value objects; не содержит benchmark mappings или user payload logs. |
+| `src/nadikt/domain/text/normalization.py` | Deterministic stdlib-only text normalization mechanics для post-ASR dictionary spike. |
+| `src/nadikt/domain/text/dictionary.py` | In-memory engine-independent dictionary facade для spike без persistence. |
+| `benchmarks/asr/coding_term_normalization.py` | Benchmark-only public coding-term pronunciation mappings, adapted to domain matching mechanics for normalized scoring view. |
 | `src/nadikt/infrastructure/asr/faster_whisper.py` | Lazy optional faster-whisper local CTranslate2 probe adapter; не импортирует SDK до load path. |
 | `src/nadikt/infrastructure/asr/gigaam.py` | Lazy optional GigaAM local loading probe wrapper; фиксирует `local_loading_unconfirmed` без подтверждённого local API. |
 | `benchmarks/asr/dry_run.py` | Dry-run manifest validator без загрузки моделей и без сетевых вызовов. |
@@ -137,6 +144,7 @@ nadikt/
 - Не добавляйте облачную обработку, автоматическую телеметрию или сетевую загрузку моделей в основной runtime.
 - Не журналируйте аудио, распознанный текст, пользовательский словарь или содержимое буфера обмена.
 - Сохраняйте независимость общего ядра от PySide6, Windows API и конкретных ASR SDK.
+- Не переносите benchmark-specific coding-term mappings или private/user dictionary payload в `src/nadikt/domain/text/`; domain содержит только generic mechanics и safe diagnostics.
 - Не фиксируйте победителя ASR, VAD, упаковщик или системные библиотеки до воспроизводимого прототипа.
 - Разбивайте зависимые shell-команды на отдельные вызовы: сначала `git checkout main`, затем `git pull origin main`; не объединяйте их через `&&`.
 - Не создавайте исходные каталоги и проектный код в рамках контекстных команд AI Factory.

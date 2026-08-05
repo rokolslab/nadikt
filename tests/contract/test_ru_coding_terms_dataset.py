@@ -80,6 +80,47 @@ class RuCodingTermsDatasetTest(unittest.TestCase):
         self.assertIn("run_profile_repeats_too_low", errors)
         self.assertIn("run_profile_duration_drift", errors)
 
+    def test_expected_coding_terms_reject_unsafe_metadata(self) -> None:
+        manifest = load_json(ROOT / "benchmarks/asr/datasets/coding_pilot.v1.json")
+        term = manifest["samples"][2]["expected_coding_terms"][0]
+        term["reference_text"] = "forbidden"
+        term["accepted_variants"] = ["/private/path"]
+        term["term_id"] = "token=forbidden"
+
+        _, errors = validate_dataset_manifest(manifest)
+
+        self.assertTrue(any(error.endswith("unknown_fields") for error in errors))
+        self.assertTrue(any(error.endswith("unsafe_term_id") for error in errors))
+        self.assertTrue(any(error.endswith("unsafe_variants") for error in errors))
+
+    def test_expected_coding_terms_reject_nfkc_duplicate_variants(self) -> None:
+        manifest = load_json(ROOT / "benchmarks/asr/datasets/coding_pilot.v1.json")
+        term = manifest["samples"][2]["expected_coding_terms"][0]
+        term["accepted_variants"] = ["pytest", "ｐｙｔｅｓｔ"]
+
+        _, errors = validate_dataset_manifest(manifest)
+
+        self.assertTrue(any(error.endswith("duplicate_variants") for error in errors))
+
+    def test_coding_pilot_keeps_cyrillic_spoken_variants_out_of_raw_variants(self) -> None:
+        manifest = load_json(ROOT / "benchmarks/asr/datasets/coding_pilot.v1.json")
+        samples, errors = validate_dataset_manifest(manifest)
+
+        self.assertEqual([], errors)
+        for sample in samples:
+            for term in sample.expected_coding_terms:
+                if term["require_latin"]:
+                    variants = " ".join(term["accepted_variants"])
+                    self.assertFalse(any("а" <= char.casefold() <= "я" or char.casefold() == "ё" for char in variants))
+
+    def test_expected_english_terms_must_match_latin_required_canonical_terms(self) -> None:
+        manifest = load_json(ROOT / "benchmarks/asr/datasets/coding_pilot.v1.json")
+        manifest["samples"][2]["expected_english_terms"] = ["pytest"]
+
+        _, errors = validate_dataset_manifest(manifest)
+
+        self.assertIn("sample_2_expected_english_terms_mismatch", errors)
+
     def test_valid_private_bindings_resolve_without_leaking_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

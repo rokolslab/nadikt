@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Mapping
@@ -355,6 +356,9 @@ def validate_dataset_manifest(data: Mapping[str, Any]) -> tuple[list[SampleManif
         if coding_term_errors:
             errors.extend(coding_term_errors)
             continue
+        if expected_coding_terms and _expected_english_terms_mismatch(expected_terms, expected_coding_terms):
+            errors.append(f"sample_{index}_expected_english_terms_mismatch")
+            continue
         samples.append(
             SampleManifest(
                 sample_id=sample_id,
@@ -440,11 +444,15 @@ def validate_run_profile_preflight(
 def _validate_expected_coding_terms(sample_index: int, terms: list[object]) -> list[str]:
     errors: list[str] = []
     seen: set[str] = set()
+    allowed_fields = {"term_id", "canonical", "accepted_variants", "expected_occurrences", "require_latin"}
     for term_index, term in enumerate(terms):
         if not isinstance(term, Mapping):
             errors.append(f"sample_{sample_index}_term_{term_index}_not_object")
             continue
         required = ["term_id", "canonical", "accepted_variants", "expected_occurrences", "require_latin"]
+        extra_fields = sorted(str(field) for field in set(term) - allowed_fields)
+        if extra_fields:
+            errors.append(f"sample_{sample_index}_term_{term_index}_unknown_fields")
         missing = [field for field in required if field not in term]
         if missing:
             errors.append(f"sample_{sample_index}_term_{term_index}_missing:{','.join(missing)}")
@@ -456,18 +464,66 @@ def _validate_expected_coding_terms(sample_index: int, terms: list[object]) -> l
         require_latin = term["require_latin"]
         if not isinstance(term_id, str) or not term_id:
             errors.append(f"sample_{sample_index}_term_{term_index}_invalid_term_id")
+        elif _unsafe_public_metadata(term_id):
+            errors.append(f"sample_{sample_index}_term_{term_index}_unsafe_term_id")
         elif term_id in seen:
             errors.append(f"sample_{sample_index}_term_{term_index}_duplicate_term_id")
         seen.add(str(term_id))
         if not isinstance(canonical, str) or not canonical:
             errors.append(f"sample_{sample_index}_term_{term_index}_invalid_canonical")
+        elif _unsafe_public_metadata(canonical):
+            errors.append(f"sample_{sample_index}_term_{term_index}_unsafe_canonical")
         if not isinstance(variants, list) or not all(isinstance(item, str) and item for item in variants):
             errors.append(f"sample_{sample_index}_term_{term_index}_invalid_variants")
+        elif len({_public_metadata_key(item) for item in variants}) != len(variants):
+            errors.append(f"sample_{sample_index}_term_{term_index}_duplicate_variants")
+        elif any(_unsafe_public_metadata(item) for item in variants):
+            errors.append(f"sample_{sample_index}_term_{term_index}_unsafe_variants")
         if isinstance(occurrences, bool) or not isinstance(occurrences, int) or occurrences <= 0:
             errors.append(f"sample_{sample_index}_term_{term_index}_invalid_occurrences")
         if not isinstance(require_latin, bool):
             errors.append(f"sample_{sample_index}_term_{term_index}_invalid_require_latin")
     return errors
+
+
+def _unsafe_public_metadata(value: str) -> bool:
+    lowered = value.casefold()
+    forbidden_markers = (
+        "audio_path",
+        "clipboard_payload",
+        "credential",
+        "hypothesis",
+        "hypothesis_text",
+        "private_path",
+        "raw_audio",
+        "reference",
+        "reference_text",
+        "token=",
+        "transcript",
+        "transcript_text",
+        "user_dictionary_entry",
+    )
+    if any(marker in lowered for marker in forbidden_markers):
+        return True
+    if "://" in value or value.startswith("/") or "\\" in value:
+        return True
+    if len(value) >= 3 and value[1:3] == ":\\":
+        return True
+    return False
+
+
+def _public_metadata_key(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def _expected_english_terms_mismatch(expected_terms: list[object], coding_terms: list[object]) -> bool:
+    expected = {str(term).casefold() for term in expected_terms}
+    canonical = {
+        str(term.get("canonical", "")).casefold()
+        for term in coding_terms
+        if isinstance(term, Mapping) and term.get("require_latin") is True
+    }
+    return expected != canonical
 
 
 def _non_empty_string(value: object) -> bool:

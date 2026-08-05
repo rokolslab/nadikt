@@ -74,6 +74,9 @@
 - Example manifests may be incomplete only when `manifest_kind` is `example`.
 - `dataset_profile` and `coding_pilot` manifests may focus on `ru_coding_terms`, `ru_short` and `warmup` without claiming full benchmark coverage.
 - Coding terms use versioned records: `term_id`, `canonical`, `accepted_variants`, `expected_occurrences` and `require_latin`.
+- Coding-term records use an allowlist only; unknown fields are rejected so transcript, hypothesis, path or credential-like payload cannot be hidden in nested metadata.
+- For records with `require_latin=true`, `accepted_variants` must stay Latin-safe for raw ASR scoring. Cyrillic spoken variants belong to the benchmark post-ASR normalization policy, not to raw accepted variants.
+- Adding samples or changing durations in `coding_pilot.v1.json` requires an intentional dataset revision/run-profile update and synchronized private bindings. Updating only focused profile metadata such as `ru_coding_terms.v1.json` does not make those samples part of the frozen `coding-pilot-v1` matrix.
 - No field may contain transcript text, raw audio content, user dictionary entries or clipboard data.
 - Absolute paths are rejected by the dry-run validator because they can reveal local user or client names.
 - Sample IDs and labels are safe to print; references and hypotheses are not printed.
