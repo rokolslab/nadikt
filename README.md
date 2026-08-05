@@ -20,8 +20,8 @@ application release is available yet.
 
 > [!IMPORTANT]
 > Законченное приложение ещё не создано. В репозитории находятся требования,
-> архитектурные решения, исследования, disposable Windows insertion spike и
-> начальный skeleton для локального ASR benchmark. Spike завершён с решением
+> архитектурные решения, исследования, ранний bounded dictation slice,
+> disposable Windows insertion spike и skeleton для локального ASR benchmark. Spike завершён с решением
 > **REWORK** и не является production-компонентом.
 
 ## Зачем Nadikt
@@ -42,8 +42,9 @@ application release is available yet.
 | Требования Windows MVP | Согласованы, ТЗ v0.2 |
 | Архитектура | Explicit Architecture, стратегия `HYBRID` |
 | Windows insertion spike | `REWORK`, controlled classic Win32 cases пройдены |
+| Windows dictation slice | Ранний controlled CLI skeleton, default fail-closed |
 | GigaAM/faster-whisper benchmark | Protocol, manifests и dry-run harness созданы |
-| Переносимое ядро | Начат ASR contract skeleton |
+| Переносимое ядро | Начаты ASR/audio/insertion contracts и pipeline skeleton |
 | PySide6 desktop shell | Не начат |
 | Installer / release | Отсутствует |
 
@@ -80,6 +81,7 @@ CLI в пользовательские приложения без изучен
 | [Архитектура](docs/architecture/Nadikt_development_strategy.md) | Стратегия общего ядра и platform adapters |
 | [ADR-001](docs/architecture/ADR-001-codebase-strategy.md) | Решение `HYBRID` и условия пересмотра |
 | [Windows insertion spike](docs/research/windows_insertion_spike_results.md) | Evidence, ограничения и решение `REWORK` |
+| [Windows dictation acceptance](docs/research/windows_dictation_slice_acceptance.md) | Manual matrix; `NOT RUN` rows are blockers |
 | [Local ASR benchmark](docs/research/local_asr_performance_benchmark_plan.md) | Protocol, offline/privacy gates и dry-run benchmark harness |
 | [Участие в разработке](CONTRIBUTING.md) | Workflow, quality gates и правила изменений |
 | [Безопасность](SECURITY.md) | Как сообщить об уязвимости |

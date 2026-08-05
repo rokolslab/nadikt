@@ -67,10 +67,19 @@ docs/
 На 2026-07-27 создана первая минимальная часть целевой структуры для ASR benchmark:
 
 - `src/nadikt/domain/ports/asr.py` - SDK-neutral контракт ASR engine lifecycle, metadata, capabilities и segment transcript result.
+- `src/nadikt/domain/dictation/` - explicit state machine bounded dictation session с retained-result invariants и privacy-safe context.
+- `src/nadikt/domain/ports/audio.py` и `src/nadikt/domain/ports/insertion.py` - platform-neutral contracts для one-shot audio capture и safe insertion.
+- `src/nadikt/domain/text/normalization.py` - минимальная deterministic whitespace/newline normalization без словаря и benchmark mappings.
+- `src/nadikt/application/services/` - bounded dictation pipeline и safe insertion orchestration через injected ports.
 - `src/nadikt/infrastructure/asr/` - optional SDK-backed ASR probe adapters для GigaAM/faster-whisper с lazy imports; fake-backed на текущем этапе, не composition root.
+- `src/nadikt/infrastructure/audio/windows_capture.py` - opt-in Windows bounded capture adapter с lazy optional `sounddevice` import и fail-closed behavior вне подтверждённой capability.
+- `src/nadikt/infrastructure/model_packages/` - runtime local model package validation boundary без imports из `benchmarks.asr` и до ASR SDK load.
+- `src/nadikt/infrastructure/platform/windows/` - initial UIA/clipboard/input adapter boundaries; default behavior fails closed unless controlled Windows facades are injected.
+- `src/nadikt/bootstrap.py` - early composition helpers для explicit local ASR candidate и controlled Windows dictation slice.
+- `src/nadikt/presentation/cli/windows_dictation_slice.py` - operator-controlled CLI harness для одного bounded Windows dictation run; не является desktop app entry point.
 - `benchmarks/asr/` - standard-library helpers для dataset/model manifests, versioned run profiles/result schemas, dry-run, local package probe runner, resource timing, segmentation validation, package integrity, privacy audit и quality metrics.
 - `model_packs/` - documentation и example inventory manifests без model weights.
-- `tests/contract/` - contract tests для benchmark harness без реальных моделей.
+- `tests/unit/`, `tests/contract/`, `tests/integration/` и `tests/windows/` - fake-backed slice tests, benchmark contract tests и opt-in Windows checks без реальных моделей по умолчанию.
 
 Эти элементы не являются точкой входа приложения и не фиксируют финальный выбор ASR backend.
 

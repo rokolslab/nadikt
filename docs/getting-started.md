@@ -12,6 +12,7 @@ Nadikt находится на стадии исследования и квал
 - согласованные требования Windows MVP;
 - Explicit Architecture и roadmap;
 - исследования ASR-кандидатов и открытых приложений;
+- ранний production skeleton для bounded Windows dictation slice;
 - disposable Windows insertion spike с automated tests.
 
 ## Требования К Окружению
@@ -66,6 +67,13 @@ ASR benchmark contract tests запускаются из корня репози
 python3 -m unittest discover -s tests/contract
 ```
 
+Новые fake-backed tests минимального dictation slice запускаются вместе с общим
+test discovery и не требуют реальных ASR packages, микрофона или Windows UIA:
+
+```powershell
+python3 -m unittest discover -s tests
+```
+
 Privacy-safe fingerprint benchmark environment:
 
 ```powershell
@@ -82,6 +90,21 @@ Fixture создаёт собственные native `EDIT` и `ES_PASSWORD`, п
 foreground/focus перед input и завершает процесс с non-zero code при любом
 нарушенном case.
 
+## Controlled Windows Dictation Slice
+
+Ранний CLI harness находится в `nadikt.presentation.cli.windows_dictation_slice`.
+Он предназначен для operator-controlled Windows host и принимает только explicit
+validated local model binding. Команда требует private inventory/model package и
+non-scored warm-up audio вне Git:
+
+```powershell
+python -m nadikt.presentation.cli.windows_dictation_slice --inventory <private-inventory> --package-id <package-id> --candidate-id <candidate-id> --backend faster-whisper --warm-up-audio-file <private-warmup-wav>
+```
+
+Пути в примере являются placeholders: реальные private paths не фиксируются в
+Git, logs, stdout или acceptance notes. Пока Windows UIA/clipboard/input facades
+не подключены в controlled host, production adapters fail closed.
+
 ## Что Не Запускать Без Подготовки
 
 Manual CLI и clipboard racer предназначены для контролируемого experiment, а
@@ -89,6 +112,7 @@ Manual CLI и clipboard racer предназначены для контроли
 
 - [experiment README](../experiments/windows_insertion/README.md);
 - [результаты spike](research/windows_insertion_spike_results.md);
+- [acceptance matrix slice](research/windows_dictation_slice_acceptance.md);
 - [правила безопасности](../SECURITY.md).
 
 ## Следующий Шаг

@@ -62,8 +62,10 @@ Nadikt - автономная фоновая утилита голосового
 ## Текущие артефакты реализации
 
 - Начальный SDK-neutral ASR contract находится в `src/nadikt/domain/ports/asr.py`.
+- Ранний bounded Windows dictation slice skeleton находится в `src/nadikt/domain/dictation/`, `src/nadikt/domain/ports/audio.py`, `src/nadikt/domain/ports/insertion.py`, `src/nadikt/application/services/`, `src/nadikt/infrastructure/audio/windows_capture.py`, `src/nadikt/infrastructure/model_packages/`, `src/nadikt/infrastructure/platform/windows/`, `src/nadikt/bootstrap.py` и `src/nadikt/presentation/cli/windows_dictation_slice.py`.
 - Локальный ASR benchmark protocol, manifests, dry-run, offline package probe и results template находятся в `docs/research/local_asr_performance_benchmark_plan.md`, `docs/research/local_asr_offline_package_prototype.md`, `benchmarks/asr/`, `model_packs/` и `docs/research/local_asr_performance_benchmark_results.md`.
 - Benchmark dry run и local package probe не скачивают модели, не выполняют сетевые вызовы и проверяют manifests/package integrity/safe failure outcomes; real model loads выполняются только при наличии локальных packages вне Git.
+- Windows dictation slice CLI является controlled harness, а не desktop entry point; без injected Windows UIA/clipboard/input facades adapters fail closed. Global hotkey, tray, overlay, long VAD, full dictionary and final ASR model choice remain out of scope.
 
 ## Контрольные решения прототипа
 

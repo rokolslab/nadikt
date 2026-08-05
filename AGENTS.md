@@ -4,7 +4,7 @@
 
 ## Обзор проекта
 
-Nadikt - автономная утилита голосового ввода для Windows 10/11 с локальным ASR, безопасной вставкой текста и будущим переносом общего ядра на Ubuntu. Законченное приложение ещё не создано; в репозитории есть начальный ASR contract/benchmark skeleton и изолированный disposable experiment безопасной Windows-вставки.
+Nadikt - автономная утилита голосового ввода для Windows 10/11 с локальным ASR, безопасной вставкой текста и будущим переносом общего ядра на Ubuntu. Законченное приложение ещё не создано; в репозитории есть ранний bounded Windows dictation slice skeleton, ASR contract/benchmark skeleton и изолированный disposable experiment безопасной Windows-вставки.
 
 Подробное описание проекта находится в `.ai-factory/DESCRIPTION.md`, канонические продуктовые требования - в `docs/`.
 
@@ -48,13 +48,26 @@ nadikt/
 |   `-- windows_insertion/              # disposable spike target/clipboard/input safety
 |-- src/
 |   `-- nadikt/
-|       |-- domain/ports/asr.py          # начальный ASR contract skeleton общего ядра
-|       `-- infrastructure/asr/          # optional fake-backed SDK probe adapters
+|       |-- domain/
+|       |   |-- dictation/               # state machine bounded dictation session
+|       |   |-- ports/                   # ASR/audio/insertion contracts
+|       |   `-- text/                    # deterministic text normalization
+|       |-- application/services/        # dictation pipeline и insertion orchestration
+|       |-- infrastructure/
+|       |   |-- asr/                     # optional SDK probe/runtime adapters
+|       |   |-- audio/                   # opt-in Windows bounded capture adapter
+|       |   |-- model_packages/          # runtime local package validation boundary
+|       |   `-- platform/windows/        # UIA/clipboard/input adapter boundaries
+|       |-- presentation/cli/            # controlled CLI harnesses
+|       `-- bootstrap.py                 # early composition helpers
 |-- benchmarks/
 |   `-- asr/                             # manifests, run profiles, dry-run и benchmark helpers
 |-- model_packs/                         # docs и example manifests; без model weights
 |-- tests/
-|   `-- contract/                        # contract tests для ASR benchmark harness
+|   |-- unit/                            # fake-backed domain/application tests
+|   |-- contract/                        # ASR benchmark и slice port contracts
+|   |-- integration/                     # runtime model package validation tests
+|   `-- windows/                         # opt-in Windows host checks
 |-- .ai-factory.json                    # метаданные установки AI Factory
 |-- AGENTS.md                           # карта проекта для агентов
 |-- CONTRIBUTING.md                     # правила contribution и pull requests
@@ -73,9 +86,23 @@ nadikt/
 | `docs/README.md` | Полный индекс требований, архитектуры, исследований и руководств. |
 | `docs/research/local_asr_performance_benchmark_plan.md` | Protocol локального ASR benchmark, метрики, offline/privacy gates и dry-run command. |
 | `docs/research/local_asr_performance_benchmark_results.md` | Шаблон результатов benchmark и decision matrix без выбора модели до измерений. |
+| `docs/research/windows_dictation_slice_acceptance.md` | Versioned manual acceptance matrix для controlled Windows dictation slice; `NOT RUN` rows являются blockers. |
 | `src/nadikt/domain/ports/asr.py` | Начальный SDK-neutral ASR contract общего ядра. |
+| `src/nadikt/domain/dictation/session.py` | Explicit bounded dictation session state machine, retained-result invariants и privacy-safe context. |
+| `src/nadikt/domain/ports/audio.py` | Bounded one-shot audio capture contract, compatible with `AsrSegmentInput`, with redacted DTO repr. |
+| `src/nadikt/domain/ports/insertion.py` | Safe insertion contracts для target capture/revalidation, clipboard transaction и input dispatch с opaque tokens. |
+| `src/nadikt/domain/text/normalization.py` | Minimal deterministic whitespace/newline normalization без user dictionary и benchmark mappings. |
+| `src/nadikt/application/services/dictation_pipeline.py` | One-shot `capture -> transcribe_segment -> normalize -> insert` orchestration через injected ports. |
+| `src/nadikt/application/services/insertion_service.py` | Safe one-shot insertion orchestration с target revalidation, clipboard restore/discard и retained-result outcomes. |
 | `src/nadikt/infrastructure/asr/faster_whisper.py` | Lazy optional faster-whisper local CTranslate2 probe adapter; не импортирует SDK до load path. |
 | `src/nadikt/infrastructure/asr/gigaam.py` | Lazy optional GigaAM local loading probe wrapper; фиксирует `local_loading_unconfirmed` без подтверждённого local API. |
+| `src/nadikt/infrastructure/audio/windows_capture.py` | Opt-in Windows bounded microphone capture adapter; lazy optional `sounddevice` import and fail-closed behavior. |
+| `src/nadikt/infrastructure/model_packages/validation.py` | Runtime local model package binding validator; rejects example/unsafe packages before ASR SDK import/load. |
+| `src/nadikt/infrastructure/platform/windows/uia.py` | UIA target-safety boundary with injected facade, stable identity hash and fail-closed protected/changed/stale outcomes. |
+| `src/nadikt/infrastructure/platform/windows/clipboard.py` | Clipboard transaction boundary with injected facade, cloneability/sequence restore policy and redacted DTOs. |
+| `src/nadikt/infrastructure/platform/windows/input.py` | Input dispatch boundary with modifier preflight and explicit direct Unicode fallback policy. |
+| `src/nadikt/bootstrap.py` | Composition helpers for explicit local ASR candidate loading and controlled Windows dictation slice wiring. |
+| `src/nadikt/presentation/cli/windows_dictation_slice.py` | Operator-controlled CLI harness for one bounded Windows dictation run; not a desktop entry point. |
 | `benchmarks/asr/dry_run.py` | Dry-run manifest validator без загрузки моделей и без сетевых вызовов. |
 | `benchmarks/asr/local_model_probe.py` | Offline local package lifecycle probe runner без transcript/audio paths в JSON summary. |
 | `benchmarks/asr/run_profiles/coding_pilot.v1.json` | Versioned coding-pilot matrix profile: frozen two-candidate pair, repeats, dataset revision, warm-up/scored samples and policy IDs. |
@@ -92,7 +119,7 @@ nadikt/
 | `.opencode/skills/nadikt-offline-asr/SKILL.md` | Правила автономной интеграции GigaAM/faster-whisper и benchmark. |
 | `opencode.json` | GitHub MCP для OpenCode; ожидает `GITHUB_TOKEN` в окружении. |
 
-Точка входа приложения отсутствует. `benchmarks/asr/dry_run.py` запускает только benchmark dry run. `experiments/windows_insertion/insertion_spike/cli.py` запускает только disposable experiment и не переносится автоматически в production.
+Точка входа законченного desktop-приложения отсутствует. `src/nadikt/presentation/cli/windows_dictation_slice.py` запускает только controlled vertical-slice harness and fails closed without injected/verified Windows capabilities. `benchmarks/asr/dry_run.py` запускает только benchmark dry run. `experiments/windows_insertion/insertion_spike/cli.py` запускает только disposable experiment и не переносится автоматически в production.
 
 ## Документация
 
@@ -110,6 +137,7 @@ nadikt/
 | ADR стратегии кодовой базы | `docs/architecture/ADR-001-codebase-strategy.md` | Принятое решение HYBRID и условия пересмотра. |
 | Handy PoC | `docs/research/handy_poc_plan.md` | Измеримый план проверки оставшихся рисков Handy. |
 | Windows insertion spike | `docs/research/windows_insertion_spike_results.md` | Проверенные факты, ограничения, production ports и решение REWORK. |
+| Windows dictation slice acceptance | `docs/research/windows_dictation_slice_acceptance.md` | Versioned manual matrix и blocker semantics. |
 | Local ASR benchmark plan | `docs/research/local_asr_performance_benchmark_plan.md` | Protocol, manifests, offline/privacy gates и dry-run command. |
 | Local ASR offline package prototype | `docs/research/local_asr_offline_package_prototype.md` | Package integrity, local probe lifecycle, fake-backed adapter checks и blockers. |
 | Local ASR benchmark results | `docs/research/local_asr_performance_benchmark_results.md` | Шаблон результатов и decision matrix. |

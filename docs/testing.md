@@ -4,16 +4,19 @@
 
 ## Текущий Test Suite
 
-Production test suite только начинает появляться. Сейчас есть contract tests
-для локального ASR benchmark harness и отдельный исполняемый набор disposable
-Windows insertion spike; оба используют стандартный `unittest`.
+Production test suite начал появляться вокруг minimal dictation slice. Сейчас
+есть unit/contract/integration tests для slice, contract tests для локального ASR
+benchmark harness и отдельный исполняемый набор disposable Windows insertion
+spike; все используют стандартный `unittest`.
 
 ```powershell
 python3 -m unittest discover -s tests
 ```
 
-Команда проверяет manifest validation, dry-run, privacy audit, quality metrics
-и ASR contract redaction без реальных моделей и без пользовательских payload.
+Команда проверяет dictation session/pipeline/insertion orchestration, runtime
+model package validation, manifest validation, dry-run, privacy audit, quality
+metrics и ASR contract redaction без реальных моделей и без пользовательских
+payload.
 
 ASR benchmark environment metadata находится в `pyproject.toml` и
 `requirements/benchmark/`. Эти locks относятся только к benchmark/probe runs и
@@ -31,6 +34,10 @@ python -m unittest discover -s tests
 ```
 
 Документированная baseline для merged spike: 63 unit/contract tests.
+
+Manual acceptance для минимального Windows dictation slice ведётся отдельно в
+`docs/research/windows_dictation_slice_acceptance.md`. Строки `NOT RUN` являются
+blocker status, а не pass.
 
 ## Что Проверяется
 
