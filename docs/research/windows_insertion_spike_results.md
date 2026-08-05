@@ -131,6 +131,37 @@ Residual TOCTOU между финальной revalidation и обработко
 приложением остаётся даже после REWORK и должен быть явно принят либо
 дополнительно ограничен в production design.
 
+## Dependency Gate для Minimal Windows Dictation Slice
+
+На 2026-08-05 минимальный vertical slice остаётся behind opt-in Windows imports:
+runtime-зависимости в `pyproject.toml` не добавляются до локального
+smoke/prototype на целевом Windows host.
+
+Предварительный gate для adapters:
+
+- Audio capture: реализовать bounded one-shot microphone adapter через
+  standard-library temp-file lifecycle и один явно выбранный Windows audio API
+  только внутри `src/nadikt/infrastructure/audio/windows_capture.py`; dependency
+  можно добавить лишь после smoke, который доказывает capture/cancel/disconnect,
+  cleanup и privacy-safe diagnostics без audio paths или device names.
+- VAD/segmentation: для slice допускается только bounded one-shot segment с
+  `segmentation_policy_id`; production long dictation/VAD остаётся out of scope,
+  и `faster-whisper vad_filter` не считается production VAD.
+- UI Automation: использовать opt-in Windows provider boundary для focused
+  control identity и `IsPassword`; выбранная библиотека должна быть import-lazy,
+  Windows-only, лицензия и offline packaging impact должны быть записаны перед
+  превращением в обязательную runtime dependency.
+- Safe insertion: production adapters не импортируют
+  `experiments.windows_insertion`; spike является design evidence только для
+  fail-closed outcomes, opaque token и clipboard ownership/sequence policy.
+- Packaging/offline: любые новые wheels/native tools должны устанавливаться из
+  controlled wheelhouse/model-pack flow; runtime не выполняет network download и
+  не принимает Hub/package names вместо verified local binding.
+
+До прохождения gate все Windows-specific adapters обязаны fail closed при
+неподтверждённой capability, неизвестном provider, unsafe clipboard formats,
+изменении target identity, elevation mismatch или incomplete cleanup evidence.
+
 ## См. Также
 
 - [Стратегия разработки](../architecture/Nadikt_development_strategy.md) - место Windows validation в общей последовательности.
