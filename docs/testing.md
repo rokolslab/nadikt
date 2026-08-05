@@ -136,6 +136,18 @@ local inventory запуск выполняется той же командой
 
 Coding-pilot real runs use controlled storage outside Git:
 
+Current WSL2 development machine controlled root:
+
+```text
+/home/oitroot/nadikt-controlled/
+```
+
+This directory is intentionally outside the repository. It stores local ASR
+model packages, private audio/reference files, private bindings, backend venvs,
+offline wheelhouse material and generated private runs. Do not commit this
+directory or copy model weights, raw audio, reference transcripts or absolute
+controlled paths into publishable benchmark artifacts.
+
 ```text
 <controlled-root>/
 |-- models/

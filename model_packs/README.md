@@ -75,7 +75,22 @@ Real `local_inventory` manifests additionally require `trusted_index_id`, `trust
 
 ## Controlled Faster-Whisper Package Preparation
 
-Для coding-pilot real load используйте controlled storage вне Git:
+Для coding-pilot real load используйте controlled storage вне Git. На текущей
+WSL2 development machine локальный controlled repository моделей и приватных
+ASR assets находится здесь:
+
+```text
+/home/oitroot/nadikt-controlled/
+```
+
+Это не часть Git repository. В нём сейчас лежат `models/inventory.json`,
+локальные packages для `gigaam-multilingual-220m` и
+`faster-whisper-small-int8`, private audio/reference bindings, backend venvs,
+offline wheelhouse и generated run artifacts. Не копируйте model weights,
+raw audio, reference transcripts или absolute controlled paths в committed
+benchmark results.
+
+Generic controlled storage layout:
 
 ```text
 <controlled-model-root>/
