@@ -34,13 +34,6 @@
         "aif-skill-generator",
         "aif-verify"
       ],
-      "mcp": {
-        "github": false,
-        "filesystem": false,
-        "postgres": false,
-        "chromeDevtools": false,
-        "playwright": false
-      },
       "managedSkills": {
         "aif": {
           "sourceHash": "020afa5ba4b141ce3d718beadfcedb38e07eee500900869a05a18534cc90ac3e",
@@ -155,7 +148,19 @@
           "installedHash": "59cf32514fde42c1da0cadcdba74d02eac529eeac5b65527ba1344046aaaf1b2"
         }
       },
-      "agentFileSources": {}
+      "installedAgentFiles": [],
+      "agentFileSources": {},
+      "managedAgentFiles": {},
+      "configFiles": [],
+      "installedConfigFiles": [],
+      "managedConfigFiles": {},
+      "mcp": {
+        "github": false,
+        "filesystem": false,
+        "postgres": false,
+        "chromeDevtools": false,
+        "playwright": false
+      }
     }
   ],
   "extensions": []
