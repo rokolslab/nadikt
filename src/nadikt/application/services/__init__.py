@@ -9,6 +9,7 @@ from nadikt.application.services.dictation_pipeline import (
     TextInsertionResult,
     TextNormalizerPort,
 )
+from nadikt.application.services.insertion_service import InsertionServiceOptions, SafeTextInsertionService
 
 __all__ = [
     "DictationPipelineService",
@@ -18,4 +19,6 @@ __all__ = [
     "TextInsertionPort",
     "TextInsertionResult",
     "TextNormalizerPort",
+    "InsertionServiceOptions",
+    "SafeTextInsertionService",
 ]

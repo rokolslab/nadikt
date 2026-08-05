@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from dataclasses import dataclass
 
 from nadikt.domain.ports.asr import (
     AsrBackend,
@@ -19,10 +20,30 @@ from nadikt.domain.ports.asr import (
 from nadikt.infrastructure.asr.faster_whisper import FasterWhisperAsrEngine
 from nadikt.infrastructure.asr.gigaam import GigaAMAsrEngine
 from nadikt.infrastructure.model_packages import ModelPackageBinding
+from nadikt.application.services import (
+    DictationPipelineService,
+    SafeTextInsertionService,
+)
+from nadikt.domain.text import DeterministicTextNormalizer
+from nadikt.infrastructure.audio import WindowsAudioCaptureAdapter
+from nadikt.infrastructure.platform.windows import (
+    WindowsClipboardTransactionAdapter,
+    WindowsInputDispatchAdapter,
+    WindowsTargetAdapter,
+)
 
 LOGGER = logging.getLogger(__name__)
 _LOG_LEVEL = os.environ.get("NADIKT_LOG_LEVEL", os.environ.get("LOG_LEVEL", "INFO")).upper()
 logging.basicConfig(level=getattr(logging, _LOG_LEVEL, logging.INFO))
+
+
+@dataclass(frozen=True)
+class WindowsDictationSliceComponents:
+    """Composed services for the controlled Windows vertical slice."""
+
+    pipeline: DictationPipelineService
+    insertion_service: SafeTextInsertionService
+    asr_engine: AsrEngine
 
 
 def load_local_asr_engine(binding: ModelPackageBinding, warm_up_segment: AsrSegmentInput) -> AsrEngine:
@@ -54,6 +75,27 @@ def load_local_asr_engine(binding: ModelPackageBinding, warm_up_segment: AsrSegm
         },
     )
     return engine
+
+
+def build_windows_dictation_slice(
+    binding: ModelPackageBinding,
+    warm_up_segment: AsrSegmentInput,
+) -> WindowsDictationSliceComponents:
+    """Compose the minimal Windows dictation slice with fail-closed adapters."""
+
+    asr_engine = load_local_asr_engine(binding, warm_up_segment)
+    insertion_service = SafeTextInsertionService(
+        target_capture=WindowsTargetAdapter(),
+        clipboard=WindowsClipboardTransactionAdapter(),
+        input_dispatch=WindowsInputDispatchAdapter(),
+    )
+    pipeline = DictationPipelineService(
+        audio_capture=WindowsAudioCaptureAdapter(),
+        asr_engine=asr_engine,
+        text_normalizer=DeterministicTextNormalizer(),
+        insertion_service=insertion_service,
+    )
+    return WindowsDictationSliceComponents(pipeline, insertion_service, asr_engine)
 
 
 def _metadata_from_binding(binding: ModelPackageBinding) -> AsrModelMetadata:
@@ -88,4 +130,4 @@ def _close_after_failed_load(engine: AsrEngine, metadata: AsrModelMetadata) -> N
         )
 
 
-__all__ = ["load_local_asr_engine"]
+__all__ = ["WindowsDictationSliceComponents", "build_windows_dictation_slice", "load_local_asr_engine"]
