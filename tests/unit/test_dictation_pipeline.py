@@ -11,7 +11,15 @@ if str(SRC) not in sys.path:
 
 from nadikt.application.services import DictationPipelineService, DictationRunOptions, TextInsertionResult
 from nadikt.domain.ports.asr import AsrBackend, AsrCapabilities, AsrModelMetadata, AsrSegmentInput, AsrSegmentTranscript
-from nadikt.domain.ports.audio import AudioCaptureOptions, AudioCaptureResult, AudioDeviceDescriptor, AudioLevelStatus
+from nadikt.domain.ports.audio import (
+    AudioCaptureError,
+    AudioCaptureFailure,
+    AudioCaptureFailureCode,
+    AudioCaptureOptions,
+    AudioCaptureResult,
+    AudioDeviceDescriptor,
+    AudioLevelStatus,
+)
 
 
 class DictationPipelineTest(unittest.TestCase):
@@ -47,11 +55,27 @@ class DictationPipelineTest(unittest.TestCase):
         self.assertTrue(outcome.retained_result)
         self.assertGreater(outcome.retained_text_chars, 0)
 
+    def test_pipeline_cleanup_failure_does_not_override_completed_outcome(self) -> None:
+        events: list[str] = []
+        with tempfile.NamedTemporaryFile(suffix=".wav") as audio:
+            pipeline = DictationPipelineService(
+                FakeAudio(events, Path(audio.name), cleanup_failure=True),
+                FakeAsr(events),
+                FakeNormalizer(events),
+                FakeInsertion(events, success=True),
+            )
+
+            outcome = pipeline.run_once(DictationRunOptions(_capture_options(), cleanup_audio=True))
+
+        self.assertEqual("completed", outcome.status.value)
+        self.assertEqual("success", outcome.outcome_code)
+
 
 class FakeAudio:
-    def __init__(self, events: list[str], audio_path: Path) -> None:
+    def __init__(self, events: list[str], audio_path: Path, *, cleanup_failure: bool = False) -> None:
         self._events = events
         self._audio_path = audio_path
+        self._cleanup_failure = cleanup_failure
 
     def list_input_devices(self) -> tuple[AudioDeviceDescriptor, ...]:
         return ()
@@ -71,6 +95,10 @@ class FakeAudio:
         return None
 
     def cleanup(self, result: AudioCaptureResult) -> None:
+        if self._cleanup_failure:
+            raise AudioCaptureError(
+                AudioCaptureFailure(AudioCaptureFailureCode.TEMP_CLEANUP_FAILED, "cleanup", True, retryable=True)
+            )
         return None
 
 

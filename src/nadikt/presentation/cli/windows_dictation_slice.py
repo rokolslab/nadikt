@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from nadikt.application.services.dictation_pipeline import DictationRunOptions
 from nadikt.bootstrap import build_windows_dictation_slice
@@ -35,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
     backend = AsrBackend(args.backend)
+    components: Any | None = None
     try:
         binding = validate_model_package_binding(
             inventory_path=Path(args.inventory),
@@ -52,33 +54,43 @@ def main(argv: list[str] | None = None) -> int:
             segmentation_policy_id="warm-up-non-scored.v1",
         )
         components = build_windows_dictation_slice(binding, warm_up_segment)
-        target = components.insertion_service.capture_target()
-        if not target.success:
-            _print_status("target_capture_failed", target.outcome_code, target.pending_clipboard_restore)
-            components.asr_engine.close()
-            return 2
-        outcome = components.pipeline.run_once(
-            DictationRunOptions(
-                AudioCaptureOptions(
-                    max_duration_seconds=args.duration_seconds,
-                    sample_rate_hz=args.sample_rate_hz,
-                    channel_count=args.channel_count,
-                    pre_buffer_seconds=args.pre_buffer_seconds,
-                    selected_device_id=args.device_id,
-                    language_profile=args.language_profile,
-                    segmentation_policy_id="bounded-one-shot.v1",
+        try:
+            target = components.insertion_service.capture_target()
+            if not target.success:
+                _print_status("target_capture_failed", target.outcome_code, target.pending_clipboard_restore)
+                return 2
+            outcome = components.pipeline.run_once(
+                DictationRunOptions(
+                    AudioCaptureOptions(
+                        max_duration_seconds=args.duration_seconds,
+                        sample_rate_hz=args.sample_rate_hz,
+                        channel_count=args.channel_count,
+                        pre_buffer_seconds=args.pre_buffer_seconds,
+                        selected_device_id=args.device_id,
+                        language_profile=args.language_profile,
+                        segmentation_policy_id="bounded-one-shot.v1",
+                    )
                 )
             )
-        )
-        _print_status(outcome.status.value, outcome.outcome_code, components.insertion_service.has_pending_clipboard_restore)
-        if components.insertion_service.has_pending_clipboard_restore:
-            _settle_clipboard(components)
-        components.asr_engine.close()
-        return 0 if outcome.status.value == "completed" else 3
+            _print_status(outcome.status.value, outcome.outcome_code, components.insertion_service.has_pending_clipboard_restore)
+            if components.insertion_service.has_pending_clipboard_restore:
+                _settle_clipboard(components)
+            return 0 if outcome.status.value == "completed" else 3
+        finally:
+            _close_loaded_engine(components)
     except Exception as exc:
         LOGGER.debug("windows_dictation_slice.failed", extra={"failure_type": type(exc).__name__})
         _print_status("failed", type(exc).__name__, False)
         return 1
+
+
+def _close_loaded_engine(components: Any | None) -> None:
+    if components is None:
+        return
+    try:
+        components.asr_engine.close()
+    except Exception:
+        LOGGER.debug("[FIX] windows_dictation_slice.asr_close.failed", extra={"outcome": "close_failed_redacted"})
 
 
 def _settle_clipboard(components: object) -> None:

@@ -190,8 +190,15 @@ class DictationPipelineService:
         finally:
             if capture_result is not None and options.cleanup_audio:
                 LOGGER.debug("dictation_pipeline.audio_cleanup.start", extra=safe_audio_capture_log_context(capture_result))
-                self._audio_capture.cleanup(capture_result)
-                LOGGER.debug("dictation_pipeline.audio_cleanup.complete", extra=safe_audio_capture_log_context(capture_result))
+                try:
+                    self._audio_capture.cleanup(capture_result)
+                except Exception:
+                    LOGGER.debug(
+                        "[FIX] dictation_pipeline.audio_cleanup.failed",
+                        extra={**safe_audio_capture_log_context(capture_result), "cleanup_outcome": "failed_retained_pipeline_outcome"},
+                    )
+                else:
+                    LOGGER.debug("dictation_pipeline.audio_cleanup.complete", extra=safe_audio_capture_log_context(capture_result))
 
     def _failure_code_for_state(self, session: DictationSession) -> DictationOutcomeCode:
         if session.state.value == "capturing":
